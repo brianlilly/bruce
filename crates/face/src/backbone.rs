@@ -26,30 +26,13 @@ struct ConvBn {
 }
 
 impl ConvBn {
-    fn load(
-        vb: &VarBuilder,
-        prefix: &str,
-        conv_idx: usize,
-        bn_idx: usize,
-        groups: usize,
-        stride: usize,
-        padding: usize,
-    ) -> Result<Self> {
+    fn load(vb: &VarBuilder, prefix: &str, conv_idx: usize, bn_idx: usize, groups: usize, stride: usize, padding: usize) -> Result<Self> {
         let weight = vb.get_unchecked(&format!("{prefix}.{conv_idx}.weight"))?;
         let bn_weight = vb.get_unchecked(&format!("{prefix}.{bn_idx}.weight"))?;
         let bn_bias = vb.get_unchecked(&format!("{prefix}.{bn_idx}.bias"))?;
         let bn_mean = vb.get_unchecked(&format!("{prefix}.{bn_idx}.running_mean"))?;
         let bn_var = vb.get_unchecked(&format!("{prefix}.{bn_idx}.running_var"))?;
-        Ok(Self {
-            weight,
-            bn_weight,
-            bn_bias,
-            bn_mean,
-            bn_var,
-            stride,
-            padding,
-            groups,
-        })
+        Ok(Self { weight, bn_weight, bn_bias, bn_mean, bn_var, stride, padding, groups })
     }
 
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
@@ -57,9 +40,7 @@ impl ConvBn {
         let x = x.broadcast_sub(&self.bn_mean.reshape((1, (), 1, 1))?)?;
         let denom = (&self.bn_var + 1e-5f64)?.sqrt()?;
         let x = x.broadcast_div(&denom.reshape((1, (), 1, 1))?)?;
-        let x = x
-            .broadcast_mul(&self.bn_weight.reshape((1, (), 1, 1))?)?
-            .broadcast_add(&self.bn_bias.reshape((1, (), 1, 1))?)?;
+        let x = x.broadcast_mul(&self.bn_weight.reshape((1, (), 1, 1))?)?.broadcast_add(&self.bn_bias.reshape((1, (), 1, 1))?)?;
         x.relu()
     }
 }
@@ -113,21 +94,13 @@ impl Backbone {
             let mut blocks = Vec::new();
             for n in 0..num_blocks {
                 let prefix = format!("layer{}.{n}", i + 1);
-                let (inp, stride) = if n == 0 {
-                    (stage_planes[i + 1], 2usize)
-                } else {
-                    (stage_planes[i + 2], 1usize)
-                };
+                let (inp, stride) = if n == 0 { (stage_planes[i + 1], 2usize) } else { (stage_planes[i + 2], 1usize) };
                 blocks.push(ConvDw::load(vb, &prefix, inp, stride)?);
             }
             stages.push(blocks);
         }
 
-        Ok(Self {
-            stem_conv,
-            stem_dw,
-            stages,
-        })
+        Ok(Self { stem_conv, stem_dw, stages })
     }
 
     /// Forward: `[1, 3, H, W]` → 4 feature maps C2..C5 at strides 4, 8, 16, 32.

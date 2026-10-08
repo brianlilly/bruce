@@ -409,6 +409,8 @@ ENVIRONMENT:
   BRUCE_SAM3_DIR=DIR   the SAM 3 model for Object / Describe masks (default: <settings folder>/models/sam3;
                    optional: Bruce offers to download it when first needed)
   LIGHTCRAFT_SAM3_MIRRORS=URL,…   where to download the SAM 3 model from (base URLs, tried in order)
+  BRUCE_FACE_DIR=DIR   the SCRFD-500M face detection model (default: <settings folder>/models/scrfd;
+                   optional: put scrfd_500m.safetensors converted with tools/convert_scrfd.py)
 ";
 
 /// Warnings and errors (failed commands, AI mask analysis) on stderr; `BRUCE_LOG=info`
@@ -511,6 +513,11 @@ fn main() -> eframe::Result {
                 std::env::var_os("BRUCE_SAM3_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("sam3")));
             // the user's own download locations, one base URL per line (LIGHTCRAFT_SAM3_MIRRORS too)
             session.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
+            // Face detection: the SCRFD-500M weights in <config>/models/scrfd, or BRUCE_FACE_DIR
+            // (optional: without it, face detection returns a "not installed" error)
+            session.face_detector.dir =
+                std::env::var_os("BRUCE_FACE_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("scrfd")));
+            session.face_detector.background = true;
             let mut app = LightcraftApp::new(session, services());
             if let Some(ui) = prefs {
                 app.ui = ui;

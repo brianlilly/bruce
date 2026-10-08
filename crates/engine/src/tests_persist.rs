@@ -78,10 +78,7 @@ fn failed_append_fails_the_command_and_is_retried() {
     let e = s.execute("photo.rate", &json!({"rating": 4})).unwrap_err();
     assert!(matches!(e, EngineError::NotSaved(_)), "{e:?}");
     let msg = e.to_string();
-    assert!(
-        msg.starts_with("saved in memory but not written to disk: ") && msg.contains("disk full") && msg.ends_with("Bruce will retry"),
-        "{msg}"
-    );
+    assert!(msg.starts_with("saved in memory but not written to disk: ") && msg.contains("disk full") && msg.ends_with("Bruce will retry"), "{msg}");
     // applied in memory, undoable, queued
     assert_eq!(s.catalog.photo(id).unwrap().rating, 4);
     assert!(!s.undo.is_empty());

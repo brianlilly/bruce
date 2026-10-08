@@ -19,6 +19,7 @@ pub mod crs_masks;
 pub mod demo;
 pub mod devices;
 pub mod export;
+pub mod face;
 pub mod files;
 pub mod fonts;
 pub mod guard;
@@ -157,6 +158,8 @@ pub struct Session {
     pub active_mask: Option<u32>,
     /// AI masks (SAM 3): the model and the last photo prepared for it.
     pub segmenter: segment::Segmenter,
+    /// Face detection (SCRFD-500M): model, worker thread and results.
+    pub face_detector: face::FaceDetector,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -246,6 +249,7 @@ impl Session {
             depth: 0,
             active_mask: None,
             segmenter: segment::Segmenter::default(),
+            face_detector: face::FaceDetector::default(),
             active_spot: None,
             library: None,
             xmp: sidecar::XmpPrefs::default(),

@@ -9,14 +9,7 @@
 //!
 //! No UI dependencies (L3).
 #![forbid(unsafe_code)]
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unimplemented,
-    clippy::todo,
-    clippy::unreachable
-)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 #[cfg(not(target_arch = "wasm32"))]
 mod backbone;
@@ -27,11 +20,11 @@ mod neck;
 #[cfg(not(target_arch = "wasm32"))]
 mod weights;
 
-use std::path::{Path, PathBuf};
 #[cfg(not(target_arch = "wasm32"))]
 use candle_core::{DType, Device, Tensor};
 #[cfg(not(target_arch = "wasm32"))]
 use candle_nn::VarBuilder;
+use std::path::{Path, PathBuf};
 
 /// The weights filename we look for.
 pub const WEIGHTS_FILE: &str = "scrfd_500m.safetensors";
@@ -112,22 +105,13 @@ impl Scrfd {
             return Err(Error::Missing(dir.to_path_buf()));
         }
         let w = weights::Weights::open(&dir.join(WEIGHTS_FILE))?;
-        let vb = VarBuilder::from_backend(
-            Box::new(weights::Backend(w)),
-            DType::F32,
-            device.clone(),
-        );
+        let vb = VarBuilder::from_backend(Box::new(weights::Backend(w)), DType::F32, device.clone());
 
         let backbone = backbone::Backbone::load(&vb.pp("backbone"))?;
         let neck = neck::Neck::load(&vb.pp("neck"))?;
         let head = head::Head::load(&vb.pp("bbox_head"))?;
 
-        Ok(Self {
-            device,
-            backbone,
-            neck,
-            head,
-        })
+        Ok(Self { device, backbone, neck, head })
     }
 
     /// Detect faces in an RGB image (8-bit, row-major, `w × h` pixels).
@@ -136,23 +120,10 @@ impl Scrfd {
     /// `nms_threshold` controls IoU-based non-maximum suppression (recommended: 0.45).
     ///
     /// Returns face bounding boxes in pixel coordinates of the original image.
-    pub fn detect(
-        &self,
-        rgb: &[u8],
-        img_w: usize,
-        img_h: usize,
-        score_threshold: f32,
-        nms_threshold: f32,
-    ) -> Result<Vec<Face>> {
-        let expected = img_w
-            .checked_mul(img_h)
-            .and_then(|v| v.checked_mul(3))
-            .ok_or_else(|| Error::Model("image dimensions overflow".into()))?;
+    pub fn detect(&self, rgb: &[u8], img_w: usize, img_h: usize, score_threshold: f32, nms_threshold: f32) -> Result<Vec<Face>> {
+        let expected = img_w.checked_mul(img_h).and_then(|v| v.checked_mul(3)).ok_or_else(|| Error::Model("image dimensions overflow".into()))?;
         if rgb.len() != expected {
-            return Err(Error::Model(format!(
-                "expected {expected} bytes for {img_w}×{img_h} RGB, got {}",
-                rgb.len()
-            )));
+            return Err(Error::Model(format!("expected {expected} bytes for {img_w}×{img_h} RGB, got {}", rgb.len())));
         }
 
         // Aspect-preserving resize to INPUT_SIZE × INPUT_SIZE with letterboxing
@@ -167,18 +138,7 @@ impl Scrfd {
         let anchors = generate_anchors(INPUT_SIZE, INPUT_SIZE)?;
 
         // Post-process: decode boxes, apply threshold and NMS
-        let faces = postprocess(
-            &cls_scores,
-            &bbox_preds,
-            &anchors,
-            scale,
-            pad_x,
-            pad_y,
-            img_w,
-            img_h,
-            score_threshold,
-            nms_threshold,
-        )?;
+        let faces = postprocess(&cls_scores, &bbox_preds, &anchors, scale, pad_x, pad_y, img_w, img_h, score_threshold, nms_threshold)?;
 
         Ok(faces)
     }
@@ -220,10 +180,7 @@ fn preprocess(rgb: &[u8], w: usize, h: usize) -> Result<(Tensor, f32, f32, f32)>
                 let p01 = rgb.get(y0 * w * 3 + x1 * 3 + c).copied().unwrap_or(0) as f32;
                 let p10 = rgb.get(y1 * w * 3 + x0 * 3 + c).copied().unwrap_or(0) as f32;
                 let p11 = rgb.get(y1 * w * 3 + x1 * 3 + c).copied().unwrap_or(0) as f32;
-                let val = p00 * (1.0 - fx) * (1.0 - fy)
-                    + p01 * fx * (1.0 - fy)
-                    + p10 * (1.0 - fx) * fy
-                    + p11 * fx * fy;
+                let val = p00 * (1.0 - fx) * (1.0 - fy) + p01 * fx * (1.0 - fy) + p10 * (1.0 - fx) * fy + p11 * fx * fy;
                 if let Some(dst) = resized_rgb.get_mut(dst_y * new_w * 3 + dst_x * 3 + c) {
                     *dst = val.round().clamp(0.0, 255.0) as u8;
                 }
@@ -242,13 +199,9 @@ fn preprocess(rgb: &[u8], w: usize, h: usize) -> Result<(Tensor, f32, f32, f32)>
             let dst_x = x + pad_left;
             if dst_y < INPUT_SIZE && dst_x < INPUT_SIZE {
                 for c in 0..3 {
-                    let val = resized_rgb
-                        .get(y * new_w * 3 + x * 3 + c)
-                        .copied()
-                        .unwrap_or(0) as f32;
+                    let val = resized_rgb.get(y * new_w * 3 + x * 3 + c).copied().unwrap_or(0) as f32;
                     let norm = (val - 127.5) / 128.0;
-                    if let Some(dst) = pixels.get_mut(c * INPUT_SIZE * INPUT_SIZE + dst_y * INPUT_SIZE + dst_x)
-                    {
+                    if let Some(dst) = pixels.get_mut(c * INPUT_SIZE * INPUT_SIZE + dst_y * INPUT_SIZE + dst_x) {
                         *dst = norm;
                     }
                 }
@@ -306,24 +259,15 @@ fn postprocess(
     nms_threshold: f32,
 ) -> Result<Vec<Face>> {
     // Squeeze batch dimension and move to CPU
-    let scores = cls_scores
-        .squeeze(0)?
-        .to_device(&Device::Cpu)?
-        .to_dtype(DType::F32)?;
-    let preds = bbox_preds
-        .squeeze(0)?
-        .to_device(&Device::Cpu)?
-        .to_dtype(DType::F32)?;
+    let scores = cls_scores.squeeze(0)?.to_device(&Device::Cpu)?.to_dtype(DType::F32)?;
+    let preds = bbox_preds.squeeze(0)?.to_device(&Device::Cpu)?.to_dtype(DType::F32)?;
 
     let num_anchors = scores.dim(0)?;
     let scores_data = scores.flatten_all()?.to_vec1::<f32>()?;
     let preds_data = preds.flatten_all()?.to_vec1::<f32>()?;
 
     if anchors.len() != num_anchors {
-        return Err(Error::Model(format!(
-            "anchor count mismatch: expected {num_anchors}, generated {}",
-            anchors.len()
-        )));
+        return Err(Error::Model(format!("anchor count mismatch: expected {num_anchors}, generated {}", anchors.len())));
     }
 
     // Decode boxes and apply sigmoid + threshold
@@ -362,13 +306,7 @@ fn postprocess(
         let fh = (orig_y2.min(img_h as f32) - fy).max(0.0);
 
         if fw > 0.0 && fh > 0.0 {
-            candidates.push(Face {
-                x: fx,
-                y: fy,
-                w: fw,
-                h: fh,
-                score: conf,
-            });
+            candidates.push(Face { x: fx, y: fy, w: fw, h: fh, score: conf });
         }
     }
 
@@ -387,10 +325,10 @@ fn postprocess(
             if suppressed.get(j).copied().unwrap_or(true) {
                 continue;
             }
-            if iou(&candidates[i], &candidates[j]) > nms_threshold {
-                if let Some(s) = suppressed.get_mut(j) {
-                    *s = true;
-                }
+            if iou(&candidates[i], &candidates[j]) > nms_threshold
+                && let Some(s) = suppressed.get_mut(j)
+            {
+                *s = true;
             }
         }
     }
@@ -408,11 +346,7 @@ fn iou(a: &Face, b: &Face) -> f32 {
     let area_a = a.w * a.h;
     let area_b = b.w * b.h;
     let union = area_a + area_b - inter;
-    if union > 0.0 {
-        inter / union
-    } else {
-        0.0
-    }
+    if union > 0.0 { inter / union } else { 0.0 }
 }
 
 #[cfg(test)]
@@ -421,58 +355,25 @@ mod tests {
 
     #[test]
     fn iou_identical() {
-        let a = Face {
-            x: 10.0,
-            y: 20.0,
-            w: 100.0,
-            h: 100.0,
-            score: 0.9,
-        };
+        let a = Face { x: 10.0, y: 20.0, w: 100.0, h: 100.0, score: 0.9 };
         let result = iou(&a, &a);
         assert!((result - 1.0).abs() < 1e-5, "identical boxes should have IoU 1.0");
     }
 
     #[test]
     fn iou_disjoint() {
-        let a = Face {
-            x: 0.0,
-            y: 0.0,
-            w: 10.0,
-            h: 10.0,
-            score: 0.9,
-        };
-        let b = Face {
-            x: 100.0,
-            y: 100.0,
-            w: 10.0,
-            h: 10.0,
-            score: 0.8,
-        };
+        let a = Face { x: 0.0, y: 0.0, w: 10.0, h: 10.0, score: 0.9 };
+        let b = Face { x: 100.0, y: 100.0, w: 10.0, h: 10.0, score: 0.8 };
         assert!(iou(&a, &b) < 1e-5, "disjoint boxes should have IoU 0");
     }
 
     #[test]
     fn iou_half_overlap() {
-        let a = Face {
-            x: 0.0,
-            y: 0.0,
-            w: 10.0,
-            h: 10.0,
-            score: 0.9,
-        };
-        let b = Face {
-            x: 5.0,
-            y: 0.0,
-            w: 10.0,
-            h: 10.0,
-            score: 0.8,
-        };
+        let a = Face { x: 0.0, y: 0.0, w: 10.0, h: 10.0, score: 0.9 };
+        let b = Face { x: 5.0, y: 0.0, w: 10.0, h: 10.0, score: 0.8 };
         // Intersection: 5×10 = 50, Union: 100 + 100 - 50 = 150
         let result = iou(&a, &b);
-        assert!(
-            (result - 50.0 / 150.0).abs() < 1e-5,
-            "expected IoU ≈ 0.333, got {result}"
-        );
+        assert!((result - 50.0 / 150.0).abs() < 1e-5, "expected IoU ≈ 0.333, got {result}");
     }
 
     #[cfg(not(target_arch = "wasm32"))]

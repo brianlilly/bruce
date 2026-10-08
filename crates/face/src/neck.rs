@@ -28,12 +28,7 @@ impl Conv {
         let bias = vb.get_unchecked(&format!("{prefix}.conv.bias"))?;
         let k = weight.dim(2)?;
         let padding = if k == 1 { 0 } else { 1 };
-        Ok(Self {
-            weight,
-            bias,
-            stride,
-            padding,
-        })
+        Ok(Self { weight, bias, stride, padding })
     }
 
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
@@ -77,11 +72,7 @@ impl Neck {
 
         let mut downsample_convs = Vec::new();
         for i in 0..2 {
-            downsample_convs.push(Conv::load_with_stride(
-                vb,
-                &format!("downsample_convs.{i}"),
-                2,
-            )?);
+            downsample_convs.push(Conv::load_with_stride(vb, &format!("downsample_convs.{i}"), 2)?);
         }
 
         let mut pafpn_convs = Vec::new();
@@ -89,12 +80,7 @@ impl Neck {
             pafpn_convs.push(Conv::load(vb, &format!("pafpn_convs.{i}"))?);
         }
 
-        Ok(Self {
-            lateral_convs,
-            fpn_convs,
-            downsample_convs,
-            pafpn_convs,
-        })
+        Ok(Self { lateral_convs, fpn_convs, downsample_convs, pafpn_convs })
     }
 
     /// Forward: takes 4 backbone outputs [C2, C3, C4, C5], produces 3 feature maps at strides 8, 16, 32.
@@ -106,9 +92,7 @@ impl Neck {
         let mut laterals = Vec::new();
         for (i, lat_conv) in self.lateral_convs.iter().enumerate() {
             let idx = i + 1; // start_level=1
-            let feat = backbone_outs.get(idx).ok_or_else(|| {
-                candle_core::Error::Msg(format!("missing backbone output at index {idx}"))
-            })?;
+            let feat = backbone_outs.get(idx).ok_or_else(|| candle_core::Error::Msg(format!("missing backbone output at index {idx}")))?;
             laterals.push(lat_conv.forward(feat)?);
         }
 

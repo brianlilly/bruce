@@ -28,11 +28,7 @@ impl GroupNorm {
     fn load(vb: &VarBuilder, prefix: &str, num_groups: usize) -> Result<Self> {
         let weight = vb.get_unchecked(&format!("{prefix}.weight"))?;
         let bias = vb.get_unchecked(&format!("{prefix}.bias"))?;
-        Ok(Self {
-            weight,
-            bias,
-            num_groups,
-        })
+        Ok(Self { weight, bias, num_groups })
     }
 
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
@@ -54,9 +50,7 @@ impl GroupNorm {
         let normalized = normalized.reshape((b, c, h, w))?;
 
         // Apply affine: weight * normalized + bias
-        normalized
-            .broadcast_mul(&self.weight.reshape((1, (), 1, 1))?)?
-            .broadcast_add(&self.bias.reshape((1, (), 1, 1))?)
+        normalized.broadcast_mul(&self.weight.reshape((1, (), 1, 1))?)?.broadcast_add(&self.bias.reshape((1, (), 1, 1))?)
     }
 }
 
@@ -73,11 +67,7 @@ impl DwConvGn {
         let gn = GroupNorm::load(vb, &format!("{prefix}.gn"), 16)?;
         let k = weight.dim(2)?;
         let padding = if k == 1 { 0 } else { 1 };
-        Ok(Self {
-            weight,
-            gn,
-            padding,
-        })
+        Ok(Self { weight, gn, padding })
     }
 
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
@@ -118,10 +108,7 @@ impl DwSepConv {
     fn load(vb: &VarBuilder, prefix: &str) -> Result<Self> {
         let depthwise_conv = DwConvGn::load(vb, &format!("{prefix}.depthwise_conv"))?;
         let pointwise_conv = PwConvGn::load(vb, &format!("{prefix}.pointwise_conv"))?;
-        Ok(Self {
-            depthwise_conv,
-            pointwise_conv,
-        })
+        Ok(Self { depthwise_conv, pointwise_conv })
     }
 
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
@@ -181,12 +168,7 @@ impl Head {
             scales.push(s);
         }
 
-        Ok(Self {
-            cls_convs,
-            cls_pred,
-            reg_pred,
-            scales,
-        })
+        Ok(Self { cls_convs, cls_pred, reg_pred, scales })
     }
 
     /// Forward: process one feature level and return (cls_scores, bbox_preds).
@@ -203,9 +185,7 @@ impl Head {
         let reg_out = self.reg_pred.forward(&feat)?;
 
         // Apply learnable scale to reg output
-        let scale = self.scales.get(scale_idx).ok_or_else(|| {
-            candle_core::Error::Msg(format!("missing scale at index {scale_idx}"))
-        })?;
+        let scale = self.scales.get(scale_idx).ok_or_else(|| candle_core::Error::Msg(format!("missing scale at index {scale_idx}")))?;
         let reg_scaled = reg_out.broadcast_mul(scale)?;
 
         let b = cls_out.dim(0)?;
@@ -215,16 +195,11 @@ impl Head {
         let num_anchors = 2usize;
 
         // cls_out: [B, num_anchors * num_classes, H, W] → [B, H*W*num_anchors, num_classes]
-        let cls_score = cls_out
-            .reshape((b, num_anchors, num_classes, h, w))?
-            .permute((0, 3, 4, 1, 2))?
-            .reshape((b, h * w * num_anchors, num_classes))?;
+        let cls_score =
+            cls_out.reshape((b, num_anchors, num_classes, h, w))?.permute((0, 3, 4, 1, 2))?.reshape((b, h * w * num_anchors, num_classes))?;
 
         // reg_scaled: [B, num_anchors * 4, H, W] → [B, H*W*num_anchors, 4]
-        let bbox_pred = reg_scaled
-            .reshape((b, num_anchors, 4, h, w))?
-            .permute((0, 3, 4, 1, 2))?
-            .reshape((b, h * w * num_anchors, 4))?;
+        let bbox_pred = reg_scaled.reshape((b, num_anchors, 4, h, w))?.permute((0, 3, 4, 1, 2))?.reshape((b, h * w * num_anchors, 4))?;
 
         Ok((cls_score, bbox_pred))
     }
