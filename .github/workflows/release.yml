@@ -2,7 +2,7 @@
 # are configured) and creates or updates the draft GitHub Release "LightCraft v<version>".
 # See docs/releasing.md.
 #
-# The signing jobs (macOS, Windows) and the draft-release job run in the `release` environment
+# The signing jobs (Windows) and the draft-release job run in the `release` environment
 # (restricted to the `release` branch), which holds the signing secrets. Every secret is optional:
 # missing ones produce unsigned artifacts and a warning, never a failed build. The jobs that sign
 # nothing (version, Linux, Flatpak, FreeBSD, web) run without it, so a dispatch on any branch is
@@ -62,55 +62,6 @@ jobs:
             echo "prerelease=$pre"
           } >>"$GITHUB_OUTPUT"
           echo "### LightCraft v$v (\`${GITHUB_SHA::9}\`)" >>"$GITHUB_STEP_SUMMARY"
-
-  macos:
-    name: macOS universal
-    needs: version
-    runs-on: macos-15-xlarge  # M2 Pro larger runner; use only in release.yml (actions_macos_xl budget caps spend)
-    environment: release
-    env:
-      LIGHTCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      LIGHTCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-    steps:
-      - uses: actions/checkout@v4
-      # Fonts (optional build input; required for releases): see craftrules standards/fonts.md.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: storytold/craft-fonts
-          ref: abb83316d96aa59c1cf64784289e378fe9fa5695 # bump deliberately
-          path: craft-fonts
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin, x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-macos-universal
-      - name: Apply version override
-        if: inputs.version != ''
-        run: cargo xtask version set "$LIGHTCRAFT_VERSION"
-      - name: Import signing certificate
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: packaging/macos/import-cert.sh
-      - name: Build, sign, notarize
-        env:
-          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
-          CRAFT_FONTS_REQUIRED: "1"
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: packaging/macos/package.sh --arch universal
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-macos
-          path: dist/release/*
-          if-no-files-found: error
-      - name: Remove temporary keychain
-        if: always()
-        run: |
-          if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN" || true; fi
 
   windows:
     name: Windows ${{ matrix.arch }}
@@ -364,7 +315,7 @@ jobs:
 
   release:
     name: Draft GitHub Release
-    needs: [version, macos, windows, linux, flatpak, freebsd, web]
+    needs: [version, windows, linux, flatpak, freebsd, web]
     runs-on: ubuntu-latest
     environment: release
     permissions:

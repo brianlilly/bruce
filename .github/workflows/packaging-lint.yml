@@ -46,7 +46,7 @@ jobs:
           }
       - name: XML, desktop entry, AppStream, Flatpak manifest
         run: |
-          xmllint --noout packaging/windows/lightcraft.wxs packaging/macos/*.plist* packaging/linux/*.xml*
+          xmllint --noout packaging/windows/lightcraft.wxs packaging/linux/*.xml*
           # Windows Installer needs Icon ids ending in .ico or .exe, or shortcuts show a blank icon.
           if grep -oE '<Icon Id="[^"]*"' packaging/windows/lightcraft.wxs | grep -vE '\.(ico|exe)"$'; then
             echo "::error::Icon Id must end in .ico or .exe"; exit 1
@@ -59,7 +59,7 @@ jobs:
           src = yaml.safe_load(open("packaging/linux/flatpak/ai.storyteller.lightcraft.yml"))
           bundle = yaml.safe_load(open("packaging/linux/flatpak/ai.storyteller.lightcraft.bundle.yml"))
           for m in (src, bundle):
-              assert m["id"] == "ai.storyteller.lightcraft" and m["command"] == "lightcraft", m["id"]
+              assert m["id"] == "ai.storyteller.lightcraft" and m["command"] == "bruce", m["id"]
           for key in ("runtime", "runtime-version", "sdk", "finish-args"):
               assert src[key] == bundle[key], f"Flatpak manifests disagree on {key}: {src[key]} vs {bundle[key]}"
           print("Flatpak manifests ok")

@@ -22,11 +22,10 @@ release that has already been published, so bump the version before producing an
 
 ## Builds and artifacts
 
-Release jobs build macOS universal, Windows x86/x64/ARM64, Linux x86_64/aarch64, FreeBSD x86_64,
+Release jobs build Windows x86/x64, Linux x86_64/aarch64, FreeBSD x86_64,
 and the WASM web app. The platform scripts in [`packaging/`](../packaging/) write their outputs to
 `dist/release/` (the full list of files is the README's Downloads section):
 
-- macOS: app DMG and CLI ZIP.
 - Windows: MSI installer and portable ZIP for each architecture.
 - Linux: AppImage (with its `.AppImage.zsync`), `.deb`, `.rpm`, and `.tar.gz` for each
   architecture (`packaging/linux/package.sh`). Each AppImage embeds
@@ -42,7 +41,7 @@ and the WASM web app. The platform scripts in [`packaging/`](../packaging/) writ
   with `tar -xzf <file> --strip-components 1 -C /usr/local`.
 - Web: `lightcraft-web-<version>.zip`.
 
-Only the macOS, Windows and draft-release jobs use the `release` environment. The others sign
+Only the Windows and draft-release jobs use the `release` environment. The others sign
 nothing, so dispatching the workflow on a branch (`gh workflow run release.yml --ref <branch>`)
 dry-runs them: the signing jobs are refused by the environment's branch rule, and the release job,
 which needs them, is skipped.
@@ -59,12 +58,8 @@ workflow.
 
 All credentials are stored as secrets in the GitHub `release` environment. Signing is optional:
 without platform signing credentials, packaging continues with unsigned artifacts and warnings.
-macOS notarization is a separate optional step; when its credentials are absent, a build with a
-signing identity is signed but not notarized. Configure only the platform credentials you need:
+Configure only the platform credentials you need:
 
-- **macOS signing:** `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, and `KEYCHAIN_PASSWORD`.
-  **Notarization** additionally needs all of `APPLE_ID`, `APPLE_PASSWORD` (an app-specific
-  password), and `APPLE_TEAM_ID`.
 - **Windows signing:** either `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD`, or Azure
   Trusted Signing credentials: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`,
   `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, and `AZURE_CERT_PROFILE`.
