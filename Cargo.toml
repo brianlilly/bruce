@@ -31,6 +31,7 @@ lightcraft-ui-egui = { path = "crates/ui-egui" }
 lightcraft-mcp = { path = "crates/mcp" }
 lightcraft-fetch = { path = "crates/fetch" }
 lightcraft-segment = { path = "crates/segment" }
+lightcraft-face = { path = "crates/face" }
 
 # foundation
 thiserror = "2"
