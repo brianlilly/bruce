@@ -28,11 +28,11 @@ pub fn start(port: u16, ctx: egui::Context) -> Receiver<ControlRequest> {
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("lightcraft: control server failed to bind 127.0.0.1:{port}: {e}");
+            eprintln!("bruce: control server failed to bind 127.0.0.1:{port}: {e}");
             return rx;
         }
     };
-    eprintln!("lightcraft: control server listening on 127.0.0.1:{port}");
+    eprintln!("bruce: control server listening on 127.0.0.1:{port}");
     std::thread::spawn(move || accept_loop(listener, tx, ctx));
     rx
 }

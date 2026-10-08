@@ -209,10 +209,10 @@ impl NativeMenu {
         self.items.clear();
 
         // the application menu
-        let app_menu = Submenu::new("LightCraft", true);
-        let about = MenuItem::with_id("app.about", lightcraft_ui_egui::i18n::tr("About LightCraft"), true, None);
+        let app_menu = Submenu::new("Bruce", true);
+        let about = MenuItem::with_id("app.about", lightcraft_ui_egui::i18n::tr("About Bruce"), true, None);
         let settings = MenuItem::with_id(SETTINGS, lightcraft_ui_egui::i18n::tr("Settings…"), true, accelerator(SETTINGS_KEY));
-        let quit = MenuItem::with_id(QUIT, lightcraft_ui_egui::i18n::tr("Quit LightCraft"), true, accelerator("Cmd+Q"));
+        let quit = MenuItem::with_id(QUIT, lightcraft_ui_egui::i18n::tr("Quit Bruce"), true, accelerator("Cmd+Q"));
         let _ = app_menu.append_items(&[
             &about,
             &PredefinedMenuItem::separator(),
@@ -220,7 +220,7 @@ impl NativeMenu {
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::services(Some(lightcraft_ui_egui::i18n::tr("Services"))),
             &PredefinedMenuItem::separator(),
-            &PredefinedMenuItem::hide(Some(lightcraft_ui_egui::i18n::tr("Hide LightCraft"))),
+            &PredefinedMenuItem::hide(Some(lightcraft_ui_egui::i18n::tr("Hide Bruce"))),
             &PredefinedMenuItem::hide_others(Some(lightcraft_ui_egui::i18n::tr("Hide Others"))),
             &PredefinedMenuItem::show_all(Some(lightcraft_ui_egui::i18n::tr("Show All"))),
             &PredefinedMenuItem::separator(),
@@ -436,7 +436,7 @@ mod tests {
         set_language(Locale::ZhHant);
         assert_eq!(label_text("File"), "檔案");
         assert_eq!(label_text("Settings…"), "設定…");
-        assert_eq!(label_text("Quit LightCraft"), "結束 LightCraft");
+        assert_eq!(label_text("Quit Bruce"), "結束 Bruce");
         set_language(Locale::En);
     }
 

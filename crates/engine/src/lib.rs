@@ -61,7 +61,7 @@ pub enum EngineError {
     Catalog(#[from] lightcraft_catalog::CatalogError),
     /// The command's change is applied (in memory, undoable) but its journal records could not
     /// be written. They stay queued and are written by the next successful save.
-    #[error("saved in memory but not written to disk: {0}; LightCraft will retry")]
+    #[error("saved in memory but not written to disk: {0}; Bruce will retry")]
     NotSaved(String),
     /// Another process (the app, `lightcraft-cli`, another computer) has the library open.
     #[error("{0}")]

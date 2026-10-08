@@ -709,6 +709,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "bruce"
+version = "0.4.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "lightcraft-codecs",
+ "lightcraft-engine",
+ "lightcraft-raster",
+ "lightcraft-sysmem",
+ "lightcraft-ui-egui",
+ "log",
+ "muda",
+ "rfd",
+ "serde_json",
+ "winresource",
+]
+
+[[package]]
 name = "built"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2775,24 +2793,6 @@ dependencies = [
  "libc",
  "plain",
  "redox_syscall 0.9.4",
-]
-
-[[package]]
-name = "lightcraft"
-version = "0.4.0"
-dependencies = [
- "eframe",
- "egui",
- "lightcraft-codecs",
- "lightcraft-engine",
- "lightcraft-raster",
- "lightcraft-sysmem",
- "lightcraft-ui-egui",
- "log",
- "muda",
- "rfd",
- "serde_json",
- "winresource",
 ]
 
 [[package]]

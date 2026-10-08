@@ -61,17 +61,17 @@ impl CameraProfile {
     }
 }
 
-/// LightCraft's configuration folder (settings, GPU marker, camera profiles).
+/// Bruce's configuration folder (settings, GPU marker, camera profiles).
 pub fn config_dir() -> Option<PathBuf> {
     if cfg!(target_os = "macos") {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/LightCraft"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Bruce"))
     } else if cfg!(windows) {
-        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("LightCraft"))
+        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("Bruce"))
     } else {
         std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-            .map(|c| c.join("lightcraft"))
+            .map(|c| c.join("bruce"))
     }
 }
 

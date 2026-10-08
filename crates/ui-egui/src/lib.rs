@@ -342,7 +342,7 @@ impl LightcraftApp {
                 self.ui.unsaved_seen = true;
                 let t = ctx.input(|i| i.time);
                 let what = if n == 1 { "1 change".to_string() } else { format!("{n} changes") };
-                self.ui.toast = Some((format!("{what} saved in memory but not written to disk: {e} — LightCraft will retry"), t + 6.0));
+                self.ui.toast = Some((format!("{what} saved in memory but not written to disk: {e} — Bruce will retry"), t + 6.0));
             }
             (None, true) => {
                 self.ui.unsaved_seen = false;

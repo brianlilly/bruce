@@ -145,7 +145,7 @@ standard error codes (-32700 parse, -32600 invalid request, -32601 method not fo
 invalid params, -32002 resource not found).
 
 With `--library`, a command whose change can't be written to disk (disk full, …) is an error too:
-`saved in memory but not written to disk: <reason>; LightCraft will retry` — the change is applied in the session and
+`saved in memory but not written to disk: <reason>; Bruce will retry` — the change is applied in the session and
 written by the next successful save (see [control-protocol.md](control-protocol.md#when-the-library-cant-be-saved)).
 
 ## One-shot commands: `lightcraft-cli run`
