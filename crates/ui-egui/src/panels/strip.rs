@@ -25,27 +25,31 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             ui.vertical_centered(|ui| {
                 ui.spacing_mut().item_spacing.y = 6.0;
                 let sz = vec2(t.strip_w, 40.0);
-                if icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets (Shift+P)").clicked() {
-                    let _ = app.run("panel.presets", json!({}));
-                }
-                for (id, icon, panel, tip) in [
-                    ("edit", Icon::Sliders, RightPanel::Edit, "Edit (E)"),
-                    ("crop", Icon::Crop, RightPanel::Crop, "Crop & Rotate (C)"),
-                    ("remove", Icon::Eraser, RightPanel::Remove, "Remove (H)"),
-                    ("masking", Icon::Mask, RightPanel::Masking, "Masking (M)"),
-                    ("redeye", Icon::Eye, RightPanel::RedEye, "Red Eye"),
-                ] {
-                    let on = app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles);
-                    if icon_button(ui, id, icon, sz, on, has_photo, tip).clicked() {
-                        let _ = app.run(&format!("panel.{id}"), json!({}));
+                // Bruce: gallery-focused strip — edit tools are behind the `develop` feature.
+                #[cfg(feature = "develop")]
+                {
+                    if icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets (Shift+P)").clicked() {
+                        let _ = app.run("panel.presets", json!({}));
                     }
-                    if id == "edit" {
-                        separator(ui, &t);
+                    for (id, icon, panel, tip) in [
+                        ("edit", Icon::Sliders, RightPanel::Edit, "Edit (E)"),
+                        ("crop", Icon::Crop, RightPanel::Crop, "Crop & Rotate (C)"),
+                        ("remove", Icon::Eraser, RightPanel::Remove, "Remove (H)"),
+                        ("masking", Icon::Mask, RightPanel::Masking, "Masking (M)"),
+                        ("redeye", Icon::Eye, RightPanel::RedEye, "Red Eye"),
+                    ] {
+                        let on = app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles);
+                        if icon_button(ui, id, icon, sz, on, has_photo, tip).clicked() {
+                            let _ = app.run(&format!("panel.{id}"), json!({}));
+                        }
+                        if id == "edit" {
+                            separator(ui, &t);
+                        }
                     }
-                }
-                separator(ui, &t);
-                if icon_button(ui, "versions", Icon::Versions, sz, app.ui.right == RightPanel::Versions, has_photo, "Versions (Shift+V)").clicked() {
-                    let _ = app.run("panel.versions", json!({}));
+                    separator(ui, &t);
+                    if icon_button(ui, "versions", Icon::Versions, sz, app.ui.right == RightPanel::Versions, has_photo, "Versions (Shift+V)").clicked() {
+                        let _ = app.run("panel.versions", json!({}));
+                    }
                 }
                 if icon_button(ui, "activity", Icon::Activity, sz, app.ui.right == RightPanel::Activity, true, "History & Activity (Y)").clicked() {
                     let _ = app.run("panel.activity", json!({}));
@@ -72,6 +76,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         });
 }
 
+#[cfg(feature = "develop")]
 fn separator(ui: &mut egui::Ui, t: &Tokens) {
     let (r, _) = ui.allocate_exact_size(vec2(t.strip_w - 16.0, 1.0), egui::Sense::hover());
     ui.painter().rect_filled(r, 0.0, t.button_border.gamma_multiply(0.7));

@@ -1,6 +1,8 @@
 //! The bottom bar: view modes, sort, rating/flags pill, copy/paste settings, zoom and view toggles.
 
-use egui::{Align2, Rect, Sense, pos2, vec2};
+#[cfg(feature = "develop")]
+use egui::Align2;
+use egui::{Rect, Sense, pos2, vec2};
 use lightcraft_catalog::Flag;
 use serde_json::json;
 
@@ -20,14 +22,18 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             let left_end = ui
                 .horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
-                    for (id, icon, mode, tip) in [
+                    // Bruce: gallery-focused views; Compare/Survey/Reference are behind `develop`.
+                    let views: &[(&str, Icon, ViewMode, &str)] = &[
                         ("photoGrid", Icon::GridPhoto, ViewMode::PhotoGrid, "Photo Grid (G)"),
                         ("squareGrid", Icon::GridSquare, ViewMode::SquareGrid, "Square Grid (G toggles)"),
                         ("detail", Icon::Single, ViewMode::Detail, "Detail (D)"),
+                        #[cfg(feature = "develop")]
                         ("compare", Icon::Compare, ViewMode::Compare, "Compare (Shift+C)"),
+                        #[cfg(feature = "develop")]
                         ("survey", Icon::Survey, ViewMode::Survey, "Survey (N)"),
                         ("people", Icon::Subject, ViewMode::People, "People"),
-                    ] {
+                    ];
+                    for &(id, icon, mode, tip) in views {
                         if icon_button(ui, id, icon, vec2(32.0, 32.0), app.ui.view == mode, true, tip).clicked() {
                             let _ = app.run(&format!("view.{id}"), json!({}));
                         }
@@ -49,7 +55,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 
 /// Width of the centre group: the rating/flag pill, then Copy/Paste Edit Settings and its gear.
 const PILL_W: f32 = 196.0;
+#[cfg(feature = "develop")]
 const CENTRE_W: f32 = PILL_W + 10.0 + 136.0 + 4.0 + 30.0;
+#[cfg(not(feature = "develop"))]
+const CENTRE_W: f32 = PILL_W;
 
 /// The rating/flag pill and copy/paste settings, between `from` and `to` (the side groups): the
 /// copy buttons go first when there is no room (they are in the Edit menu too), then the pill.
@@ -59,8 +68,9 @@ fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to:
     if room < PILL_W {
         return;
     }
+    #[cfg(feature = "develop")]
     let with_copy = room >= CENTRE_W;
-    let w = if with_copy { CENTRE_W } else { PILL_W };
+    let w = if room >= CENTRE_W { CENTRE_W } else { PILL_W };
     // where it sits with room to spare (slightly left of centre), kept between the side groups
     let left = (full.center().x - 60.0 - PILL_W / 2.0).clamp(from, to - w);
     let active = app.session.active().and_then(|id| app.session.catalog.photo(id).cloned());
@@ -95,35 +105,38 @@ fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to:
             let _ = app.run("photo.flag", params);
         }
     }
-    // copy / paste settings
-    if !with_copy {
-        return;
-    }
-    let copy_r = Rect::from_min_size(pos2(pill.right() + 10.0, pill.top()), vec2(136.0, 30.0));
-    let has_clip = app.session.clipboard.is_some();
-    let label = if has_clip { "Paste Edit Settings" } else { "Copy Edit Settings" };
-    let cresp = ui.interact(copy_r, egui::Id::new("copy-settings"), Sense::click());
-    register(ui.ctx(), "button:copySettings", copy_r);
-    ui.painter().rect_filled(copy_r, 15.0, if cresp.hovered() { t.hover } else { t.canvas });
-    ui.painter().text(
-        copy_r.center(),
-        Align2::CENTER_CENTER,
-        crate::i18n::tr(label),
-        t.font(13.0),
-        if active.is_some() { t.text_label } else { t.text_disabled },
-    );
-    if cresp.clicked() && active.is_some() {
-        let _ = if has_clip { app.run("develop.paste", json!({})) } else { app.run("develop.copy", json!({})) };
-        let msg = if has_clip { "Settings pasted" } else { "Edit settings copied" };
-        app.toast(ui.ctx(), msg);
-    }
-    let gear_r = Rect::from_min_size(pos2(copy_r.right() + 4.0, pill.top()), vec2(30.0, 30.0));
-    let gresp = ui.interact(gear_r, egui::Id::new("copy-gear"), Sense::click());
-    register(ui.ctx(), "icon:copyGear", gear_r);
-    ui.painter().rect_filled(gear_r, 15.0, if gresp.hovered() { t.hover } else { t.canvas });
-    paint(ui.painter(), gear_r.shrink(7.0), Icon::Gear, t.icon);
-    if gresp.clicked() {
-        let _ = app.run("dialog.copySettings", json!({}));
+    // copy / paste settings (develop feature)
+    #[cfg(feature = "develop")]
+    {
+        if !with_copy {
+            return;
+        }
+        let copy_r = Rect::from_min_size(pos2(pill.right() + 10.0, pill.top()), vec2(136.0, 30.0));
+        let has_clip = app.session.clipboard.is_some();
+        let label = if has_clip { "Paste Edit Settings" } else { "Copy Edit Settings" };
+        let cresp = ui.interact(copy_r, egui::Id::new("copy-settings"), Sense::click());
+        register(ui.ctx(), "button:copySettings", copy_r);
+        ui.painter().rect_filled(copy_r, 15.0, if cresp.hovered() { t.hover } else { t.canvas });
+        ui.painter().text(
+            copy_r.center(),
+            Align2::CENTER_CENTER,
+            crate::i18n::tr(label),
+            t.font(13.0),
+            if active.is_some() { t.text_label } else { t.text_disabled },
+        );
+        if cresp.clicked() && active.is_some() {
+            let _ = if has_clip { app.run("develop.paste", json!({})) } else { app.run("develop.copy", json!({})) };
+            let msg = if has_clip { "Settings pasted" } else { "Edit settings copied" };
+            app.toast(ui.ctx(), msg);
+        }
+        let gear_r = Rect::from_min_size(pos2(copy_r.right() + 4.0, pill.top()), vec2(30.0, 30.0));
+        let gresp = ui.interact(gear_r, egui::Id::new("copy-gear"), Sense::click());
+        register(ui.ctx(), "icon:copyGear", gear_r);
+        ui.painter().rect_filled(gear_r, 15.0, if gresp.hovered() { t.hover } else { t.canvas });
+        paint(ui.painter(), gear_r.shrink(7.0), Icon::Gear, t.icon);
+        if gresp.clicked() {
+            let _ = app.run("dialog.copySettings", json!({}));
+        }
     }
 }
 

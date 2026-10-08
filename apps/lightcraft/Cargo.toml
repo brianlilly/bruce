@@ -6,6 +6,10 @@ license.workspace = true
 publish = false
 default-run = "bruce"
 
+[features]
+## Enable the full Develop/Edit module (sliders, crop, masking, presets, compare/survey views).
+develop = ["lightcraft-ui-egui/develop"]
+
 [lints]
 workspace = true
 

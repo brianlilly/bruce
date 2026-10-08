@@ -44,13 +44,18 @@ Key crates for face work:
 ## Running
 
 ```sh
-cargo run --release -p bruce                          # desktop app
+cargo run --release -p bruce                          # desktop app (gallery + people)
+cargo run --release -p bruce --features develop       # with full Develop/Edit module
 cargo run --release -p bruce -- --control 7980        # with control server
 cargo run --release -p bruce -- --memory              # in-memory demo session
 cargo run --release -p lightcraft-cli -- render in.jpg -o out.jpg --set light.exposure=1
 ```
 
 Environment: `BRUCE_LIBRARY`, `BRUCE_CONTROL_PORT`, `BRUCE_LOG`, `BRUCE_SAM3_DIR` for app-level settings. `LIGHTCRAFT_GPU_BACKEND`, `LIGHTCRAFT_GPU` for GPU settings (read by internal engine crates).
+
+## UI modes
+
+By default Bruce opens as a gallery + people browser: Photo Grid, Detail, and People views with Info/Keywords/Activity panels. The full LightCraft editing UI (Edit/Crop/Masking/Remove/RedEye panels, Presets, Compare/Survey views, Copy/Paste Settings) is behind the `develop` cargo feature on both `bruce` and `lightcraft-ui-egui` crates.
 
 ## Testing
 
