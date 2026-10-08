@@ -58,12 +58,12 @@ echo "==> LightCraft $VERSION for macOS ($ARCH), identity: $IDENTITY, notarize: 
 if [ "$SKIP_BUILD" = 0 ]; then
   args=()
   for t in "${TARGETS[@]}"; do args+=(--target "$t"); done
-  (cd "$ROOT" && cargo build --release --locked -p lightcraft -p lightcraft-cli "${args[@]}")
+  (cd "$ROOT" && cargo build --release --locked -p bruce -p lightcraft-cli "${args[@]}")
 fi
 
 rm -rf "$WORK"
 mkdir -p "$WORK/bin"
-for bin in lightcraft lightcraft-cli; do
+for bin in bruce lightcraft-cli; do
   inputs=()
   for t in "${TARGETS[@]}"; do inputs+=("$CARGO_TARGET_DIR/$t/release/$bin"); done
   lipo -create -output "$WORK/bin/$bin" "${inputs[@]}"
@@ -101,7 +101,7 @@ notarize() {
 echo "==> assembling $APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # Executable and icon carry the display name (CFBundleExecutable / CFBundleIconFile).
-cp "$WORK/bin/lightcraft" "$APP/Contents/MacOS/LightCraft"
+cp "$WORK/bin/bruce" "$APP/Contents/MacOS/LightCraft"
 cp "$ROOT/assets/app-icon/lightcraft.icns" "$APP/Contents/Resources/LightCraft.icns"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHORT_VERSION@/$SHORT_VERSION/g" \
   -e "s/@BUILD_SHA@/${LIGHTCRAFT_BUILD_SHA:-unknown}/g" \

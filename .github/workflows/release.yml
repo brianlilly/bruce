@@ -215,8 +215,8 @@ jobs:
       - name: Check the packages
         run: |
           dpkg-deb --info dist/release/*.deb
-          dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/lightcraft$|metainfo|applications'
-          ldd target/release/lightcraft
+          dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/bruce$|metainfo|applications'
+          ldd target/release/bruce
           python3 -c "import yaml; m = yaml.safe_load(open('packaging/linux/flatpak/ai.storyteller.lightcraft.yml')); assert m['id'] == 'ai.storyteller.lightcraft'"
           for appimage in dist/release/*.AppImage; do
             chmod +x "$appimage"
@@ -312,7 +312,7 @@ jobs:
             export CRAFT_FONTS_DIR="$PWD/craft-fonts" CRAFT_FONTS_REQUIRED=1
             bash packaging/freebsd/package.sh
             tar -tzf dist/release/lightcraft-*-freebsd-x86_64.tar.gz \
-              | grep -E '/bin/lightcraft$|/bin/lightcraft-cli$|/share/applications/ai\.storyteller\.lightcraft\.desktop$|/share/doc/lightcraft/LICENSE-MIT$'
+              | grep -E '/bin/bruce$|/bin/lightcraft-cli$|/share/applications/ai\.storyteller\.lightcraft\.desktop$|/share/doc/lightcraft/LICENSE-MIT$'
       - uses: actions/upload-artifact@v4
         with:
           name: release-freebsd-x86_64

@@ -43,13 +43,13 @@
   <Fragment>
     <ComponentGroup Id="LightcraftFiles" Directory="INSTALLFOLDER">
       <Component Id="LightcraftApp" Guid="8A1D3A39-F7C1-47B1-97AE-40C80BF82F4A">
-        <File Id="LightcraftExe" Source="$(var.BinDir)\lightcraft.exe" KeyPath="yes">
+        <File Id="BruceExe" Source="$(var.BinDir)\bruce.exe" KeyPath="yes">
           <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="LightCraft"
               Description="LightCraft photo library and raw developer" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
               Icon="LightcraftIcon.ico" IconIndex="0" />
         </File>
 
-        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\lightcraft.exe" Value="[#LightcraftExe]" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\bruce.exe" Value="[#BruceExe]" Type="string" />
       </Component>
 
       <Component Id="LightcraftCli">

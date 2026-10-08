@@ -42,7 +42,7 @@ BASENAME="lightcraft-$VERSION-linux-$ARCH"
 echo "==> LightCraft $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
-  (cd "$ROOT" && cargo build --release --locked -p lightcraft -p lightcraft-cli)
+  (cd "$ROOT" && cargo build --release --locked -p bruce -p lightcraft-cli)
 fi
 BIN="$CARGO_TARGET_DIR/release"
 WORK="$CARGO_TARGET_DIR/linux-package"
@@ -50,9 +50,9 @@ STAGE="$WORK/root"
 rm -rf "$WORK"
 
 # ---- stage an FHS tree (shared by every format) -------------------------------------------------
-install -Dm755 "$BIN/lightcraft" "$STAGE/usr/bin/lightcraft"
+install -Dm755 "$BIN/bruce" "$STAGE/usr/bin/bruce"
 install -Dm755 "$BIN/lightcraft-cli" "$STAGE/usr/bin/lightcraft-cli"
-strip "$STAGE/usr/bin/lightcraft" "$STAGE/usr/bin/lightcraft-cli" 2>/dev/null || true
+strip "$STAGE/usr/bin/bruce" "$STAGE/usr/bin/lightcraft-cli" 2>/dev/null || true
 install -Dm644 "$HERE/$APP_ID.desktop" "$STAGE/usr/share/applications/$APP_ID.desktop"
 install -Dm644 "$HERE/$APP_ID.mime.xml" "$STAGE/usr/share/mime/packages/$APP_ID.xml"
 mkdir -p "$STAGE/usr/share/metainfo"
@@ -97,7 +97,7 @@ if has appimage; then
   APPDIR="$WORK/LightCraft.AppDir"
   cp -R "$STAGE" "$APPDIR"
   mv "$APPDIR/usr/share/doc" "$WORK/doc-unused"
-  ln -s usr/bin/lightcraft "$APPDIR/AppRun"
+  ln -s usr/bin/bruce "$APPDIR/AppRun"
   cp "$HERE/$APP_ID.desktop" "$APPDIR/$APP_ID.desktop"
   cp "$ROOT/assets/app-icon/hicolor/256x256/apps/$APP_ID.png" "$APPDIR/$APP_ID.png"
   ln -s "$APP_ID.png" "$APPDIR/.DirIcon"

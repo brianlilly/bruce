@@ -15,7 +15,7 @@ id: ai.storyteller.lightcraft
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
-command: lightcraft
+command: bruce
 finish-args:
   # Display: Wayland first; X11 only when no Wayland compositor is running.
   - --socket=wayland
@@ -37,7 +37,7 @@ modules:
   - name: lightcraft
     buildsystem: simple
     build-commands:
-      - install -Dm755 bin/lightcraft /app/bin/lightcraft
+      - install -Dm755 bin/bruce /app/bin/bruce
       - install -Dm755 bin/lightcraft-cli /app/bin/lightcraft-cli
       - install -Dm644 share/applications/ai.storyteller.lightcraft.desktop /app/share/applications/ai.storyteller.lightcraft.desktop
       # The same MIME definitions the deb/rpm install.
