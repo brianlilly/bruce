@@ -21,10 +21,16 @@ use crate::widgets::register;
 /// Files per batch (each batch joins the catalog as it is ready, so the progress window updates).
 pub(crate) const BATCH: usize = 8;
 
-/// Files per batch for incremental folder browsing: larger than [`BATCH`] because the walker
-/// emits batches as directories are read, and each batch is probed before the next arrives.
-/// Too small wastes time starting probes; too large delays the first photos.
-const BROWSE_BATCH: usize = 32;
+/// Files per batch for the directory walker: how many file paths the walker thread accumulates
+/// before sending them to the prober. Larger batches amortize directory-listing overhead; the
+/// prober splits them further (see [`PROBE_CHUNK`]).
+const BROWSE_BATCH: usize = 64;
+
+/// Files per probe chunk: the prober splits each walker batch into sub-batches of this size
+/// and sends each to the UI thread as soon as it is ready. Small chunks mean the first photos
+/// appear quickly even on a slow NAS. 4 files at ~1 s/probe = first thumbnails in ~1 second
+/// (parallel probing finishes them all at once).
+const PROBE_CHUNK: usize = 4;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -290,20 +296,37 @@ impl ImportRun {
                     return;
                 }
             };
-            // Process batches of files as the walker discovers them.
+            // Process batches of files as the walker discovers them. Each walker batch
+            // is split into small probe chunks so photos reach the grid quickly: probing
+            // a handful of NAS files is fast, and each chunk is committed independently.
             while let Ok(files) = file_rx.recv() {
                 if cancel.load(Ordering::Relaxed) {
                     break;
                 }
-                job.total.fetch_add(files.len(), Ordering::Relaxed);
-                let prepared = match lightcraft_engine::guard::catch("browse", || job.prepare_files(files, &cancel)) {
-                    Ok(p) => p,
-                    Err(_) => break,
-                };
-                if tx.send(prepared).is_err() {
+                let mut aborted = false;
+                for chunk in files.chunks(PROBE_CHUNK) {
+                    if cancel.load(Ordering::Relaxed) {
+                        aborted = true;
+                        break;
+                    }
+                    let chunk_files = chunk.to_vec();
+                    job.total.fetch_add(chunk_files.len(), Ordering::Relaxed);
+                    let prepared = match lightcraft_engine::guard::catch("browse", || job.prepare_files(chunk_files, &cancel)) {
+                        Ok(p) => p,
+                        Err(_) => {
+                            aborted = true;
+                            break;
+                        }
+                    };
+                    if tx.send(prepared).is_err() {
+                        aborted = true;
+                        break;
+                    }
+                    ctx.request_repaint();
+                }
+                if aborted {
                     break;
                 }
-                ctx.request_repaint();
             }
             // Signal the walker to stop if it's still running.
             progress.cancel.store(true, Ordering::Relaxed);
