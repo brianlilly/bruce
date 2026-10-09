@@ -5,8 +5,8 @@ use lightcraft_meta::RegionKind;
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, cmd, f64_or};
-use crate::face_index::{FaceKey, ClusterResult};
 use crate::Session;
+use crate::face_index::{ClusterResult, FaceKey};
 
 /// Enablement: face embedding model must be installed.
 fn embed_installed(s: &Session) -> std::result::Result<(), String> {
@@ -144,28 +144,16 @@ pub fn specs() -> Vec<CommandSpec> {
                     .to_string();
 
                 let eps = f64_or(p, "eps", 0.45);
-                let min_samples = p
-                    .get("minSamples")
-                    .and_then(Value::as_u64)
-                    .and_then(|v| usize::try_from(v).ok())
-                    .unwrap_or(2);
+                let min_samples = p.get("minSamples").and_then(Value::as_u64).and_then(|v| usize::try_from(v).ok()).unwrap_or(2);
 
                 let result = s.face_index.cluster(eps, min_samples);
                 if cluster_id >= result.num_clusters {
-                    return Err(bad(
-                        "face.nameCluster",
-                        format!("cluster {cluster_id} does not exist (found {} clusters)", result.num_clusters),
-                    ));
+                    return Err(bad("face.nameCluster", format!("cluster {cluster_id} does not exist (found {} clusters)", result.num_clusters)));
                 }
 
                 // Collect the face keys for the target cluster.
-                let members: Vec<FaceKey> = result
-                    .keys
-                    .iter()
-                    .zip(result.labels.iter())
-                    .filter(|(_, label)| **label == Some(cluster_id))
-                    .map(|(key, _)| *key)
-                    .collect();
+                let members: Vec<FaceKey> =
+                    result.keys.iter().zip(result.labels.iter()).filter(|(_, label)| **label == Some(cluster_id)).map(|(key, _)| *key).collect();
 
                 if members.is_empty() {
                     return Ok(json!({"named": 0}));
@@ -174,10 +162,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 // Build SetMeta ops: set the region's name for each face in the cluster.
                 let mut ops = Vec::new();
                 for key in &members {
-                    let photo = s
-                        .catalog
-                        .photo(key.photo)
-                        .ok_or_else(|| bad("face.nameCluster", format!("photo {} not found", key.photo.0)))?;
+                    let photo = s.catalog.photo(key.photo).ok_or_else(|| bad("face.nameCluster", format!("photo {} not found", key.photo.0)))?;
                     let mut meta = photo.meta.clone();
                     if let Some(region) = meta.regions.get_mut(key.region_index) {
                         region.name = Some(name.clone());

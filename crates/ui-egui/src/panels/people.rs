@@ -32,20 +32,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 
     // --- Named People header ---
     let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER_H), Sense::hover());
-    ui.painter().text(
-        pos2(head.left() + PAD, head.center().y),
-        Align2::LEFT_CENTER,
-        "Named People",
-        t.semibold(15.0),
-        t.text,
-    );
-    ui.painter().text(
-        pos2(head.right() - PAD, head.center().y),
-        Align2::RIGHT_CENTER,
-        people.len().to_string(),
-        t.font(13.0),
-        t.text_dim,
-    );
+    ui.painter().text(pos2(head.left() + PAD, head.center().y), Align2::LEFT_CENTER, "Named People", t.semibold(15.0), t.text);
+    ui.painter().text(pos2(head.right() - PAD, head.center().y), Align2::RIGHT_CENTER, people.len().to_string(), t.font(13.0), t.text_dim);
 
     // the filters narrowing the list (a date, a keyword…), removable here
     let chips = lightcraft_engine::filter_chips(&app.session.filter, &app.session.catalog);
@@ -53,10 +41,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 
     if people.is_empty() && clusters.is_empty() {
         let (title, body) = if chips.is_empty() {
-            (
-                "No people yet",
-                "Detect and embed faces, then come back to name them. Face names from XMP also show up here.",
-            )
+            ("No people yet", "Detect and embed faces, then come back to name them. Face names from XMP also show up here.")
         } else {
             ("No people in these photos", "Remove a filter above, or choose Clear all")
         };
@@ -77,11 +62,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let has_clusters = !clusters.is_empty();
         let cluster_header_h = if has_clusters { HEADER_H } else { 0.0 };
         let cluster_rows = clusters.len().div_ceil(cols);
-        let total_h = PAD
-            + named_rows as f32 * row_h
-            + cluster_header_h
-            + cluster_rows as f32 * row_h
-            + PAD;
+        let total_h = PAD + named_rows as f32 * row_h + cluster_header_h + cluster_rows as f32 * row_h + PAD;
 
         let (area, _) = ui.allocate_exact_size(vec2(width, total_h), Sense::hover());
 
@@ -105,10 +86,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             let cluster_top = named_top + named_rows as f32 * row_h;
 
             // Section header
-            let header_rect = Rect::from_min_size(
-                area.min + vec2(0.0, cluster_top),
-                vec2(width, HEADER_H),
-            );
+            let header_rect = Rect::from_min_size(area.min + vec2(0.0, cluster_top), vec2(width, HEADER_H));
             if viewport.intersects(header_rect) {
                 ui.painter().text(
                     pos2(header_rect.left() + PAD, header_rect.center().y),
@@ -202,17 +180,10 @@ fn cluster_card(app: &mut LightcraftApp, ui: &mut egui::Ui, cluster: &UnnamedClu
     if is_naming {
         // --- Naming mode: show a text input ---
         let input_id = egui::Id::new(("cluster-name-input", cluster.cluster_id));
-        let input_rect = Rect::from_min_size(
-            pos2(r.left(), face_rect.bottom() + 4.0),
-            vec2(CARD, LABEL_H - 8.0),
-        );
+        let input_rect = Rect::from_min_size(pos2(r.left(), face_rect.bottom() + 4.0), vec2(CARD, LABEL_H - 8.0));
         // We need to extract the text, show the widget, then put it back
         let mut text = app.ui.naming_cluster.as_ref().map(|(_, t)| t.clone()).unwrap_or_default();
-        let te = egui::TextEdit::singleline(&mut text)
-            .id(input_id)
-            .hint_text("Type a name…")
-            .desired_width(CARD - 4.0)
-            .font(t.font(13.0));
+        let te = egui::TextEdit::singleline(&mut text).id(input_id).hint_text("Type a name…").desired_width(CARD - 4.0).font(t.font(13.0));
         let te_resp = ui.put(input_rect, te);
         register(ui.ctx(), format!("field:clusterName{}", cluster.cluster_id), te_resp.rect);
 
@@ -244,11 +215,7 @@ fn cluster_card(app: &mut LightcraftApp, ui: &mut egui::Ui, cluster: &UnnamedClu
         // --- Normal mode: show placeholder label ---
         let label = format!("Person {}", cluster.cluster_id.saturating_add(1));
         p.text(pos2(r.left() + 2.0, face_rect.bottom() + 14.0), Align2::LEFT_CENTER, label, t.font(13.0), t.text_dim);
-        let faces = if cluster.count == 1 {
-            "1 face".to_string()
-        } else {
-            format!("{} faces", cluster.count)
-        };
+        let faces = if cluster.count == 1 { "1 face".to_string() } else { format!("{} faces", cluster.count) };
         p.text(pos2(r.left() + 2.0, face_rect.bottom() + 32.0), Align2::LEFT_CENTER, faces, t.font(12.0), t.text_dim);
 
         if resp.on_hover_text("Click to name this person").clicked() {

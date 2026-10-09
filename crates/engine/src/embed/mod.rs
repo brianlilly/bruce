@@ -137,29 +137,17 @@ impl Session {
 
         let (cx, cy) = ((face.x0 + face.x1) / 2.0 * w, (face.y0 + face.y1) / 2.0 * h);
         let (cx, cy) = (if cx.is_finite() { cx } else { w / 2.0 }, if cy.is_finite() { cy } else { h / 2.0 });
-        let (x0, y0) = (
-            cx.clamp(side_px / 2.0, w - side_px / 2.0) - side_px / 2.0,
-            cy.clamp(side_px / 2.0, h - side_px / 2.0) - side_px / 2.0,
-        );
-        let rect = lightcraft_geom::Rect {
-            x0: x0 / w,
-            y0: y0 / h,
-            x1: (x0 + side_px) / w,
-            y1: (y0 + side_px) / h,
-        };
+        let (x0, y0) = (cx.clamp(side_px / 2.0, w - side_px / 2.0) - side_px / 2.0, cy.clamp(side_px / 2.0, h - side_px / 2.0) - side_px / 2.0);
+        let rect = lightcraft_geom::Rect { x0: x0 / w, y0: y0 / h, x1: (x0 + side_px) / w, y1: (y0 + side_px) / h };
 
         let settings = lightcraft_develop::DevelopSettings {
-            crop: lightcraft_develop::Crop {
-                geometry: lightcraft_geom::CropGeometry { rect, angle: 0.0 },
-                ..Default::default()
-            },
+            crop: lightcraft_develop::Crop { geometry: lightcraft_geom::CropGeometry { rect, angle: 0.0 }, ..Default::default() },
             ..Default::default()
         };
 
         // Render at a size that keeps the face sharp, then let the pipeline scale
         let needed = (EMBED_EDGE as f64 * w.max(h) / side_px).ceil().min(2560.0);
-        let job = self.preview_job(id, needed as usize, needed as usize, true, &settings)
-            .ok_or("could not render the face crop for embedding")?;
+        let job = self.preview_job(id, needed as usize, needed as usize, true, &settings).ok_or("could not render the face crop for embedding")?;
         let rendered = job.run();
         let img = rendered.rendered.map_err(|e| format!("could not render the face crop for embedding: {e}"))?;
 

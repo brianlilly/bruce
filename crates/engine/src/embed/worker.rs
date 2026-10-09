@@ -200,13 +200,7 @@ mod tests {
     fn job(reply: &mpsc::Sender<Outcome>) -> Job {
         // An empty folder: loading fails with an error (no model files).
         let dir = std::env::temp_dir().join(format!("bruce-embed-worker-none-{}", std::process::id()));
-        Job {
-            dir,
-            photo: PhotoId(1),
-            region_index: 0,
-            rgb: vec![0u8; 112 * 112 * 3],
-            reply: reply.clone(),
-        }
+        Job { dir, photo: PhotoId(1), region_index: 0, rgb: vec![0u8; 112 * 112 * 3], reply: reply.clone() }
     }
 
     #[test]

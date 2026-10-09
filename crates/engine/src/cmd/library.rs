@@ -908,7 +908,9 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             |s, p| {
                 let folders = s.import_defaults.auto_folders.clone();
-                if folders.is_empty() { return Ok(json!({"imported": [], "folders": []})) }
+                if folders.is_empty() {
+                    return Ok(json!({"imported": [], "folders": []}));
+                }
                 // only files that stopped growing: a file still being written is left for later
                 let known: std::collections::HashSet<String> = s
                     .catalog

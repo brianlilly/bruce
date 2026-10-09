@@ -123,33 +123,19 @@ impl FaceIndex {
         }
         let body = &data[8..];
         if !body.len().is_multiple_of(ENTRY_BYTES) {
-            return Err(format!(
-                "faces.bin body length {} is not a multiple of entry size {ENTRY_BYTES}",
-                body.len()
-            ));
+            return Err(format!("faces.bin body length {} is not a multiple of entry size {ENTRY_BYTES}", body.len()));
         }
         let count = body.len() / ENTRY_BYTES;
         let mut entries = HashMap::with_capacity(count);
         for i in 0..count {
             let off = i * ENTRY_BYTES;
-            let photo_id = u64::from_le_bytes(
-                body.get(off..off + 8)
-                    .and_then(|s| s.try_into().ok())
-                    .ok_or("truncated photo id")?,
-            );
-            let region_index = u32::from_le_bytes(
-                body.get(off + 8..off + 12)
-                    .and_then(|s| s.try_into().ok())
-                    .ok_or("truncated region index")?,
-            ) as usize;
+            let photo_id = u64::from_le_bytes(body.get(off..off + 8).and_then(|s| s.try_into().ok()).ok_or("truncated photo id")?);
+            let region_index =
+                u32::from_le_bytes(body.get(off + 8..off + 12).and_then(|s| s.try_into().ok()).ok_or("truncated region index")?) as usize;
             let mut vector = Vec::with_capacity(EMBED_DIM);
             for j in 0..EMBED_DIM {
                 let voff = off + 12 + j * 4;
-                let f = f32::from_le_bytes(
-                    body.get(voff..voff + 4)
-                        .and_then(|s| s.try_into().ok())
-                        .ok_or("truncated embedding vector")?,
-                );
+                let f = f32::from_le_bytes(body.get(voff..voff + 4).and_then(|s| s.try_into().ok()).ok_or("truncated embedding vector")?);
                 vector.push(f);
             }
             let key = FaceKey { photo: PhotoId(photo_id), region_index };
@@ -207,9 +193,7 @@ impl FaceIndex {
         // for a desktop app. For truly huge libraries a spatial index would be needed, but
         // Picasa-scale libraries (< 100k faces) fit comfortably.
         let vectors: Vec<&[f32]> = keys.iter().map(|k| self.entries[k].as_slice()).collect();
-        let dist = |i: usize, j: usize| -> f64 {
-            1.0 - cosine_similarity(vectors[i], vectors[j])
-        };
+        let dist = |i: usize, j: usize| -> f64 { 1.0 - cosine_similarity(vectors[i], vectors[j]) };
 
         // DBSCAN
         // Label: None = unvisited, Some(None) = noise, Some(Some(c)) = cluster c.
@@ -309,10 +293,7 @@ impl crate::Session {
                 }
                 count += 1;
                 // Track the face with the largest area for the representative thumbnail.
-                let area = (region.rect.x1 - region.rect.x0)
-                    * (region.rect.y1 - region.rect.y0)
-                    * f64::from(photo.width)
-                    * f64::from(photo.height);
+                let area = (region.rect.x1 - region.rect.x0) * (region.rect.y1 - region.rect.y0) * f64::from(photo.width) * f64::from(photo.height);
                 if area > best_area {
                     best_area = area;
                     best_photo = Some(key.photo);

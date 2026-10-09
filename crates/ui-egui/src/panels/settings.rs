@@ -304,7 +304,13 @@ fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     });
     if !cfg!(target_arch = "wasm32") {
         heading(ui, t, crate::i18n::tr("Auto Import"));
-        hint(ui, t, crate::i18n::tr("Photos that arrive in these folders (tethering, a scanner, a sync app) are added as soon as they're complete. Subfolders are scanned too."));
+        hint(
+            ui,
+            t,
+            crate::i18n::tr(
+                "Photos that arrive in these folders (tethering, a scanner, a sync app) are added as soon as they're complete. Subfolders are scanned too.",
+            ),
+        );
         row(ui, t, crate::i18n::tr("Watched folders"), |ui| {
             let can = app.services.pick_folder.is_some();
             let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Add Folder…")));

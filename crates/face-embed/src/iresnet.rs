@@ -113,11 +113,7 @@ impl IBasicBlock {
         let prelu = Prelu::load(vb, &format!("{prefix}.prelu.weight"))?;
         let conv2 = vb.get_unchecked(&format!("{prefix}.conv2.weight"))?;
         let bn3 = BatchNorm::load(vb, &format!("{prefix}.bn3"))?;
-        let downsample = if has_downsample {
-            Some(Downsample::load(vb, &format!("{prefix}.downsample"), stride)?)
-        } else {
-            None
-        };
+        let downsample = if has_downsample { Some(Downsample::load(vb, &format!("{prefix}.downsample"), stride)?) } else { None };
         Ok(Self { bn1, conv1, bn2, prelu, conv2, bn3, downsample, stride })
     }
 

@@ -954,10 +954,7 @@ impl Caches {
     }
     /// Unnamed face clusters (groups of similar unnamed faces for the naming workflow).
     /// Cached by catalog revision and face index size.
-    pub fn unnamed_clusters(
-        &mut self,
-        session: &lightcraft_engine::Session,
-    ) -> std::sync::Arc<Vec<lightcraft_engine::face_index::UnnamedCluster>> {
+    pub fn unnamed_clusters(&mut self, session: &lightcraft_engine::Session) -> std::sync::Arc<Vec<lightcraft_engine::face_index::UnnamedCluster>> {
         let rev = session.catalog.revision;
         let len = session.face_index.len();
         match &self.unnamed_clusters {

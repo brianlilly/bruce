@@ -116,10 +116,7 @@ impl FaceEmbedder {
     pub fn embed(&self, rgb: &[u8]) -> Result<Embedding> {
         let expected = INPUT_SIZE * INPUT_SIZE * 3;
         if rgb.len() != expected {
-            return Err(Error::Model(format!(
-                "expected {expected} bytes ({}x{}x3), got {}",
-                INPUT_SIZE, INPUT_SIZE, rgb.len()
-            )));
+            return Err(Error::Model(format!("expected {expected} bytes ({}x{}x3), got {}", INPUT_SIZE, INPUT_SIZE, rgb.len())));
         }
         let input = self.preprocess(rgb)?;
         let output = self.net.forward(&input).map_err(|e| Error::Model(format!("forward: {e}")))?;
@@ -139,10 +136,7 @@ impl FaceEmbedder {
         let mut batch_data = Vec::with_capacity(crops.len() * 3 * INPUT_SIZE * INPUT_SIZE);
         for (i, rgb) in crops.iter().enumerate() {
             if rgb.len() != expected {
-                return Err(Error::Model(format!(
-                    "crop {i}: expected {expected} bytes, got {}",
-                    rgb.len()
-                )));
+                return Err(Error::Model(format!("crop {i}: expected {expected} bytes, got {}", rgb.len())));
             }
             // Normalize and convert to CHW
             for c in 0..3 {
@@ -188,11 +182,7 @@ impl FaceEmbedder {
         let v: Vec<f32> = output.squeeze(0)?.to_vec1().map_err(|e| Error::Model(format!("postprocess: {e}")))?;
         // L2 normalize
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let vector = if norm > 1e-10 {
-            v.iter().map(|x| x / norm).collect()
-        } else {
-            v
-        };
+        let vector = if norm > 1e-10 { v.iter().map(|x| x / norm).collect() } else { v };
         Ok(Embedding { vector })
     }
 }
@@ -249,9 +239,10 @@ mod tests {
     #[test]
     fn embedding_cosine_similarity() {
         let a = Embedding { vector: vec![1.0, 0.0, 0.0] };
-        let b = Embedding { vector: vec![0.7071, 0.7071, 0.0] };
+        let v = std::f32::consts::FRAC_1_SQRT_2;
+        let b = Embedding { vector: vec![v, v, 0.0] };
         let sim = a.cosine_similarity(&b);
-        // cos(45) ~= 0.7071
-        assert!((sim - 0.7071).abs() < 0.01);
+        // cos(45°) = 1/√2
+        assert!((sim - v).abs() < 0.01);
     }
 }
