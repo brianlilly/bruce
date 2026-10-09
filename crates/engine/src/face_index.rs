@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 
 use lightcraft_catalog::PhotoId;
+use lightcraft_meta::Rect;
 
 /// The embedding dimension (AdaFace IResNet-18 produces 512-d vectors).
 const EMBED_DIM: usize = 512;
@@ -48,6 +49,20 @@ pub struct ClusterResult {
     pub keys: Vec<FaceKey>,
     /// Total number of clusters found.
     pub num_clusters: usize,
+}
+
+/// An unnamed face cluster for the People panel: a group of similar unnamed faces the user can
+/// assign a name to. The representative face (largest area) is used for the card thumbnail.
+#[derive(Clone, Debug)]
+pub struct UnnamedCluster {
+    /// The cluster id from DBSCAN (passed to `face.nameCluster`).
+    pub cluster_id: usize,
+    /// Number of unnamed faces in this cluster.
+    pub count: usize,
+    /// The photo with the largest unnamed face in this cluster (for the card thumbnail).
+    pub photo: PhotoId,
+    /// The face rect of the representative face (normalized, upright frame).
+    pub face: Rect,
 }
 
 impl FaceIndex {
@@ -261,6 +276,61 @@ fn range_query(dist: &dyn Fn(usize, usize) -> f64, n: usize, i: usize, eps: f64)
         }
     }
     result
+}
+
+impl crate::Session {
+    /// Compute unnamed face clusters for the People panel: run DBSCAN on the face index, then
+    /// filter each cluster to only unnamed faces. Clusters that are entirely named (or empty after
+    /// filtering) are excluded. The representative face in each cluster is the one with the largest
+    /// area (best thumbnail).
+    pub fn unnamed_clusters(&self) -> Vec<UnnamedCluster> {
+        if self.face_index.is_empty() {
+            return Vec::new();
+        }
+        let result = self.face_index.cluster(0.45, 2);
+        let mut clusters = Vec::new();
+
+        for cluster_id in 0..result.num_clusters {
+            // Collect the unnamed members of this cluster.
+            let mut best_photo = None;
+            let mut best_face = None;
+            let mut best_area: f64 = 0.0;
+            let mut count: usize = 0;
+
+            for (key, label) in result.keys.iter().zip(result.labels.iter()) {
+                if *label != Some(cluster_id) {
+                    continue;
+                }
+                // Check if this face already has a name.
+                let Some(photo) = self.catalog.photo(key.photo) else { continue };
+                let Some(region) = photo.meta.regions.get(key.region_index) else { continue };
+                if region.name.as_deref().is_some_and(|n| !n.trim().is_empty()) {
+                    continue; // already named — skip
+                }
+                count += 1;
+                // Track the face with the largest area for the representative thumbnail.
+                let area = (region.rect.x1 - region.rect.x0)
+                    * (region.rect.y1 - region.rect.y0)
+                    * f64::from(photo.width)
+                    * f64::from(photo.height);
+                if area > best_area {
+                    best_area = area;
+                    best_photo = Some(key.photo);
+                    best_face = Some(region.rect);
+                }
+            }
+
+            if count >= 2
+                && let (Some(photo), Some(face)) = (best_photo, best_face)
+            {
+                clusters.push(UnnamedCluster { cluster_id, count, photo, face });
+            }
+        }
+
+        // Most faces first, then by cluster id for stability.
+        clusters.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.cluster_id.cmp(&b.cluster_id)));
+        clusters
+    }
 }
 
 #[cfg(test)]

@@ -384,6 +384,9 @@ pub struct UiState {
     pub status: String,
     #[serde(skip)]
     pub dialog: Option<Dialog>,
+    /// An unnamed face cluster being named: (cluster_id, name text being edited).
+    #[serde(skip)]
+    pub naming_cluster: Option<(usize, String)>,
 }
 
 /// Settings group ids (`SettingsGroup` serde names) a new preset includes by default: everything
@@ -627,6 +630,7 @@ impl Default for UiState {
             last_find_missing: None,
             status: String::new(),
             dialog: None,
+            naming_cluster: None,
         }
     }
 }

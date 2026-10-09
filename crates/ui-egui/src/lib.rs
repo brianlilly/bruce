@@ -888,6 +888,7 @@ mod drop_tests {
 pub struct Caches {
     keyword_tree: Option<(u64, std::sync::Arc<Vec<lightcraft_catalog::KeywordNode>>)>,
     people: Option<(u64, lightcraft_catalog::Filter, std::sync::Arc<Vec<lightcraft_catalog::Person>>)>,
+    unnamed_clusters: Option<(u64, usize, std::sync::Arc<Vec<lightcraft_engine::face_index::UnnamedCluster>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
     counts: Option<(u64, LibraryCounts)>,
     date_groups: Option<(u64, std::sync::Arc<Vec<lightcraft_catalog::DateGroup>>)>,
@@ -947,6 +948,23 @@ impl Caches {
             _ => {
                 let t = std::sync::Arc::new(cat.people_in(&key));
                 self.people = Some((cat.revision, key, t.clone()));
+                t
+            }
+        }
+    }
+    /// Unnamed face clusters (groups of similar unnamed faces for the naming workflow).
+    /// Cached by catalog revision and face index size.
+    pub fn unnamed_clusters(
+        &mut self,
+        session: &lightcraft_engine::Session,
+    ) -> std::sync::Arc<Vec<lightcraft_engine::face_index::UnnamedCluster>> {
+        let rev = session.catalog.revision;
+        let len = session.face_index.len();
+        match &self.unnamed_clusters {
+            Some((r, l, t)) if *r == rev && *l == len => t.clone(),
+            _ => {
+                let t = std::sync::Arc::new(session.unnamed_clusters());
+                self.unnamed_clusters = Some((rev, len, t.clone()));
                 t
             }
         }
