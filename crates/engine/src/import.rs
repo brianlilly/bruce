@@ -299,28 +299,45 @@ pub fn is_supported(path: &Path) -> bool {
 }
 
 /// Expand files and folders (recursively) into supported files. `skip` (e.g. the library folder)
-/// is never descended into.
+/// is never descended into. When `progress` is given, the `listing` counter is updated as files
+/// are found, and `cancel` is checked between directories so a long network walk can be stopped.
 pub fn expand(paths: &[String], skip: Option<&Path>) -> Vec<String> {
-    fn walk(p: &Path, skip: Option<&Path>, out: &mut Vec<String>, top: bool) {
+    expand_with(paths, skip, None)
+}
+
+/// Like [`expand`], but reports progress and checks for cancellation.
+pub fn expand_with(paths: &[String], skip: Option<&Path>, progress: Option<&ScanProgress>) -> Vec<String> {
+    fn walk(p: &Path, skip: Option<&Path>, out: &mut Vec<String>, top: bool, progress: Option<&ScanProgress>) -> bool {
+        if progress.is_some_and(|pr| pr.cancel.load(std::sync::atomic::Ordering::Relaxed)) {
+            return false;
+        }
         let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
         if (hidden && !top) || skip.is_some_and(|s| p == s) {
-            return;
+            return true;
         }
         if p.is_dir() {
-            let Ok(rd) = std::fs::read_dir(p) else { return };
+            let Ok(rd) = std::fs::read_dir(p) else { return true };
             let mut v: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
             v.sort();
             for c in v {
-                walk(&c, skip, out, false);
+                if !walk(&c, skip, out, false, progress) {
+                    return false;
+                }
             }
         } else if top || is_supported(p) {
             // explicitly named files are attempted even with an unknown extension (sniffed)
             out.push(p.to_string_lossy().to_string());
+            if let Some(pr) = progress {
+                pr.listing.store(out.len(), std::sync::atomic::Ordering::Relaxed);
+            }
         }
+        true
     }
     let mut out = Vec::new();
     for p in paths {
-        walk(Path::new(p), skip, &mut out, true);
+        if !walk(Path::new(p), skip, &mut out, true, progress) {
+            break;
+        }
     }
     let mut seen = std::collections::HashSet::new();
     out.retain(|p| seen.insert(p.clone()));
@@ -418,6 +435,8 @@ pub struct ScanProgress {
     pub total: std::sync::atomic::AtomicUsize,
     pub done: std::sync::atomic::AtomicUsize,
     pub cancel: std::sync::atomic::AtomicBool,
+    /// Files found so far while listing directories (before probing starts).
+    pub listing: std::sync::atomic::AtomicUsize,
 }
 
 /// The result of [`scan_with`]: the candidates, and the probes to keep for the import that follows.
@@ -470,7 +489,7 @@ pub fn scan(s: &mut Session, paths: &[String]) -> Vec<ImportCandidate> {
 /// has) when `progress.cancel` is set.
 pub fn scan_with(mut input: ScanInput, paths: &[String], progress: &ScanProgress) -> ScanOutput {
     use std::sync::atomic::Ordering::Relaxed;
-    let files = expand(paths, input.skip.as_deref());
+    let files = expand_with(paths, input.skip.as_deref(), Some(progress));
     let todo: Vec<String> = files.iter().filter(|f| !input.by_path.contains_key(Path::new(f))).cloned().collect();
     progress.total.store(todo.len(), Relaxed);
     // probes from a preceding `scan` are reused when the file is unchanged (same size)

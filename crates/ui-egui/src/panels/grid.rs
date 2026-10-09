@@ -784,6 +784,10 @@ pub fn context_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     if !app.session.selection.contains(id) {
         let _ = app.run("library.select", json!({"ids": [id.0]}));
     }
+    // Cap menu height to screen minus margins so it scrolls instead of clipping.
+    let screen_h = ui.ctx().input(|i| i.raw.screen_rect.map_or(800.0, |r| r.height()));
+    let max_h = (screen_h - 60.0).max(200.0);
+    egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
     if ui.button(crate::i18n::tr("Open in Detail")).clicked() {
         let _ = app.run("view.detail", json!({}));
     }
@@ -935,6 +939,7 @@ pub fn context_menu(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     } else if ui.button(crate::i18n::tr("Delete Photo")).clicked() {
         let _ = app.run("photo.delete", json!({}));
     }
+    }); // ScrollArea
 }
 
 #[cfg(test)]

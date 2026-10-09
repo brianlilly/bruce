@@ -87,7 +87,11 @@ fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to:
     }
     pill_ui.add_space(6.0);
     let flag = active.as_ref().map(|p| p.flag).unwrap_or_default();
-    for (id, icon, f) in [("unflag", Icon::Circle, Flag::None), ("pick", Icon::FlagPick, Flag::Pick), ("reject", Icon::FlagReject, Flag::Reject)] {
+    for (id, icon, f, tip) in [
+        ("unflag", Icon::Circle, Flag::None, "Unflagged (U)"),
+        ("pick", Icon::FlagPick, Flag::Pick, "Pick (P)"),
+        ("reject", Icon::FlagReject, Flag::Reject, "Reject (X)"),
+    ] {
         let (r, resp) = pill_ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
         register(pill_ui.ctx(), format!("flag:{id}"), r);
         let on = flag == f && f != Flag::None;
@@ -99,6 +103,7 @@ fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to:
             t.icon
         };
         paint(pill_ui.painter(), r.shrink(3.0), icon, c);
+        let resp = resp.on_hover_text(crate::i18n::tr(tip));
         if resp.clicked() {
             let mut params = json!({"flag": match f { Flag::Pick => "pick", Flag::Reject => "reject", Flag::None => "none" }});
             crate::panels::compare::target_active(app, &mut params);

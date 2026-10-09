@@ -315,7 +315,11 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
         return Err("an import is running".into());
     }
     let dir_s = dir.to_string_lossy().trim_end_matches(['/', '\\']).to_string();
-    let subfolders = subfolders.unwrap_or_else(|| app.session.browse.as_ref().is_some_and(|b| b.subfolders));
+    // Default to subfolders=true: browsing a folder tree (especially on a NAS) expects to see
+    // all its photos. When re-browsing the same folder, keep the previous setting.
+    let subfolders = subfolders.unwrap_or_else(|| {
+        app.session.browse.as_ref().is_none_or(|b| if b.path == dir_s { b.subfolders } else { true })
+    });
     let running = app.scan.as_ref().is_some_and(|t| t.browse) || app.import.as_ref().is_some_and(|t| t.browse);
     if running && app.session.browse.as_ref().is_some_and(|b| b.path == dir_s && b.subfolders == subfolders) {
         // already reading this folder: clicking it again must not restart the progress
@@ -335,7 +339,7 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
     let root = dir_s.clone();
     let job = move || {
         let files: Vec<String> = if subfolders {
-            lightcraft_engine::import::expand(&[root], None)
+            lightcraft_engine::import::expand_with(&[root], None, Some(&p))
         } else {
             let mut v: Vec<String> = std::fs::read_dir(&root)
                 .map(|rd| {
@@ -353,6 +357,9 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
             v.sort();
             v
         };
+        if p.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
         let _ = tx.send(scan_with(input, &files, &p));
     };
     #[cfg(not(target_arch = "wasm32"))]
@@ -411,8 +418,16 @@ pub fn scan_progress(app: &mut LightcraftApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let total = task.progress.total.load(Ordering::Relaxed);
     let done = task.progress.done.load(Ordering::Relaxed);
+    let listing = task.progress.listing.load(Ordering::Relaxed);
     let text = if total == 0 {
-        if task.browse { "Reading folder…" } else { "Looking for photos…" }.to_string()
+        if listing > 0 {
+            // Still listing directories but already found some files.
+            format!("{} ({listing} found)", crate::i18n::tr("Reading folder…"))
+        } else if task.browse {
+            crate::i18n::tr("Reading folder…").to_string()
+        } else {
+            crate::i18n::tr("Looking for photos…").to_string()
+        }
     } else {
         crate::i18n::tr_format!("Reading photos… {done} of {total}", done = done, total = total)
     };
