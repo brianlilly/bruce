@@ -64,5 +64,3 @@ jobs:
               assert src[key] == bundle[key], f"Flatpak manifests disagree on {key}: {src[key]} vs {bundle[key]}"
           print("Flatpak manifests ok")
           EOF
-      - name: FreeBSD tarball layout (stub binaries)
-        run: bash packaging/freebsd/package.sh --dry-run

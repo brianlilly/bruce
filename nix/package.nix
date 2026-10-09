@@ -69,8 +69,7 @@ let
     vulkan-loader
   ];
 
-  # The two native binaries. The wasm app (apps/lightcraft-web) is built by `cargo xtask web`, not
-  # here; xtask is tooling.
+  # The two native binaries; xtask is tooling.
   binaries = [
     "lightcraft"
     "lightcraft-cli"

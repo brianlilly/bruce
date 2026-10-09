@@ -1,6 +1,6 @@
 //! Workspace tooling: `cargo xtask <command>`.
 //!
-//! Pure Rust (std + serde_json; flate2/brotli for the web bundle). External tools (`cargo`, `curl`, `tar`) are
+//! Pure Rust (std + serde_json). External tools (`cargo`, `curl`, `tar`) are
 //! invoked through `std::process::Command`.
 
 mod assets;
@@ -10,7 +10,6 @@ mod layers;
 mod parity;
 mod stats;
 mod version;
-mod web;
 
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
@@ -29,10 +28,7 @@ commands:
   parity [--write]
                   check docs/parity.md (every cmd:/ctl: id and path it cites exists) and print the
                   Lightroom parity summary; --write refreshes the summary table in the document
-  wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates (+ the web app)
-  web [--serve [port]] [--dev]
-                  build the browser app (apps/lightcraft-web) into <target>/web/;
-                  --serve serves it on http://127.0.0.1:<port> (default 8080)
+  wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates
   ci              fmt --check, clippy -D warnings, test, parity refs, layers, assets, wasm (stops at first failure)
   corpus [--download]
                   show where test corpora live; --download fetches PngSuite and CC0 raw samples (raw.pixls.us) into corpus/
@@ -50,7 +46,6 @@ fn main() -> ExitCode {
         Some("bench") => bench::run(&root(), &rest),
         Some("parity") => parity::run(&root(), rest.contains(&"--write")),
         Some("wasm") => cmd_wasm(),
-        Some("web") => web::run(&rest),
         Some("ci") => cmd_ci(),
         Some("corpus") => cmd_corpus(rest.contains(&"--download")),
         Some("stats") => stats::run(&root(), rest.contains(&"--exact")),
@@ -208,7 +203,7 @@ fn cmd_layers() -> Result<(), String> {
 }
 
 /// Workspace packages that must build for wasm32: all L0–L5 crates plus
-/// the egui shell and the web app.
+/// the egui shell.
 fn wasm_set() -> Result<Vec<String>, String> {
     let crates = layers::from_metadata(&metadata()?)?;
     Ok(crates
@@ -219,7 +214,6 @@ fn wasm_set() -> Result<Vec<String>, String> {
             _ => false,
         })
         .map(|c| c.name)
-        .chain(std::iter::once("lightcraft-web".to_string()))
         .collect())
 }
 

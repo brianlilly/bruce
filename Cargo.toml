@@ -81,12 +81,6 @@ rfd = "0.17"
 muda = { version = "0.21", default-features = false } # native menu bar (macOS: objc2/AppKit, pure Rust; no GTK)
 web-time = "1"
 
-# web (apps/lightcraft-web)
-wasm-bindgen = "0.2.129"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-web-sys = "0.3"
-
 [workspace.lints.rust]
 unsafe_code = "deny"
 
@@ -113,28 +107,6 @@ lto = "thin"
 codegen-units = 1
 debug = false
 
-# `cargo xtask web`: the browser build. Size matters more than build time: fat LTO, one codegen
-# unit, no symbols, abort on panic (wasm32 can't unwind anyway), size-optimized code — except the
-# crates that do per-pixel work, which stay at opt-level 3 (opt-level "s"/"z" there costs ~50 %/
-# ~130 % render time; measured in docs/web.md → Bundle size).
-[profile.web]
-inherits = "release"
-debug = false
-lto = "fat"
-codegen-units = 1
-strip = true
-panic = "abort"
-opt-level = "s"
-
-[profile.web.package]
-lightcraft-pipeline = { opt-level = 3 }
-lightcraft-raster = { opt-level = 3 }
-lightcraft-color = { opt-level = 3 }
-lightcraft-develop = { opt-level = 3 }
-lightcraft-geom = { opt-level = 3 }
-lightcraft-raw = { opt-level = 3 }
-lightcraft-codecs = { opt-level = 3 }
-lightcraft-scenes = { opt-level = 3 }
 lightcraft-preview = { opt-level = 3 }
 zune-jpeg = { opt-level = 3 }
 zune-core = { opt-level = 3 }

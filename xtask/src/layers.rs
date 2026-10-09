@@ -60,7 +60,6 @@ pub const TABLE: &[(&str, Class)] = &[
     ("lightcraft", Class::Exempt),
     ("bruce", Class::Exempt),
     ("cli", Class::Exempt),
-    ("web", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
 
@@ -305,7 +304,7 @@ mod tests {
 
     #[test]
     fn apps_exempt() {
-        for app in ["lightcraft", "bruce", "lightcraft-cli", "lightcraft-web", "xtask"] {
+        for app in ["lightcraft", "bruce", "lightcraft-cli", "xtask"] {
             assert!(check(&[c(app, &[("egui", Normal, false), ("lightcraft-ui-egui", Normal, true)])]).is_empty());
         }
     }

@@ -5,7 +5,7 @@
 # The signing jobs (Windows) and the draft-release job run in the `release` environment
 # (restricted to the `release` branch), which holds the signing secrets. Every secret is optional:
 # missing ones produce unsigned artifacts and a warning, never a failed build. The jobs that sign
-# nothing (version, Linux, Flatpak, FreeBSD, web) run without it, so a dispatch on any branch is
+# nothing (version, Linux, Flatpak) run without it, so a dispatch on any branch is
 # a dry run of them; the release job needs the signed jobs, so a branch run never drafts a release.
 name: Release
 
@@ -219,103 +219,9 @@ jobs:
           path: dist/release/*.flatpak
           if-no-files-found: error
 
-  freebsd:
-    name: FreeBSD x86_64
-    needs: version
-    # GitHub has no FreeBSD runners: build in a FreeBSD 14.3 VM, the same image and packages as
-    # .github/workflows/freebsd.yml.
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    env:
-      LIGHTCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      LIGHTCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-    steps:
-      - uses: actions/checkout@v4
-      # Fonts (optional build input; required for releases): see craftrules standards/fonts.md.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: storytold/craft-fonts
-          ref: abb83316d96aa59c1cf64784289e378fe9fa5695 # bump deliberately
-          path: craft-fonts
-      - name: Build and package in a FreeBSD VM (tar.gz)
-        # vmactions/freebsd-vm v1.5.9, pinned by commit (it runs our build).
-        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc
-        with:
-          release: "14.3"
-          usesh: true
-          cpu: 4
-          mem: 12288
-          # Passed into the VM by name; never templated into the script below.
-          envs: "LIGHTCRAFT_VERSION LIGHTCRAFT_BUILD_DATE LIGHTCRAFT_BUILD_SHA INPUT_VERSION"
-          # The FreeBSD CI packages, plus bash for the packaging script.
-          prepare: |
-            pkg install -y bash git curl pkgconf cmake python3 libxkbcommon wayland libX11 libXcursor libXrandr libXi libxcb mesa-libs vulkan-loader gtk3 fontconfig freetype2 alsa-lib
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-          run: |
-            set -e
-            . "$HOME/.cargo/env"
-            git config --global --add safe.directory "$PWD"
-            # Build outside the checkout so only dist/ is copied back out of the VM (copying the
-            # target dir back fails on large builds). 4 jobs: more runs the VM out of memory.
-            export CARGO_TARGET_DIR=/var/tmp/lightcraft-target CARGO_BUILD_JOBS=4
-            if [ -n "$INPUT_VERSION" ]; then cargo xtask version set "$LIGHTCRAFT_VERSION"; fi
-            # craft-fonts was checked out next to the sources and synced into the VM with them.
-            export CRAFT_FONTS_DIR="$PWD/craft-fonts" CRAFT_FONTS_REQUIRED=1
-            bash packaging/freebsd/package.sh
-            tar -tzf dist/release/lightcraft-*-freebsd-x86_64.tar.gz \
-              | grep -E '/bin/bruce$|/bin/lightcraft-cli$|/share/applications/ai\.storyteller\.lightcraft\.desktop$|/share/doc/lightcraft/LICENSE-MIT$'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-freebsd-x86_64
-          path: dist/release/*
-          if-no-files-found: error
-
-  web:
-    name: Web (wasm)
-    needs: version
-    runs-on: ubuntu-latest
-    env:
-      LIGHTCRAFT_VERSION: ${{ needs.version.outputs.version }}
-      LIGHTCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
-      WASM_BINDGEN_VERSION: 0.2.129
-    steps:
-      - uses: actions/checkout@v4
-      # Fonts (optional build input; required for releases): see craftrules standards/fonts.md.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: storytold/craft-fonts
-          ref: abb83316d96aa59c1cf64784289e378fe9fa5695 # bump deliberately
-          path: craft-fonts
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-web
-      - name: Install wasm-bindgen CLI
-        run: |
-          # Must match the wasm-bindgen version in Cargo.lock exactly (cargo xtask web checks it).
-          if ! { command -v wasm-bindgen >/dev/null && wasm-bindgen --version | grep -q "$WASM_BINDGEN_VERSION"; }; then
-            cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
-          fi
-          wasm-bindgen --version
-      - name: Apply version override
-        if: inputs.version != ''
-        run: cargo xtask version set "$LIGHTCRAFT_VERSION"
-      - name: Build and zip
-        env:
-          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
-          CRAFT_FONTS_REQUIRED: "1"
-        run: packaging/web/package.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-web
-          path: dist/release/*
-          if-no-files-found: error
-
   release:
     name: Draft GitHub Release
-    needs: [version, windows, linux, flatpak, freebsd, web]
+    needs: [version, windows, linux, flatpak]
     runs-on: ubuntu-latest
     environment: release
     permissions:
