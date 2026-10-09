@@ -109,43 +109,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 let _ = app.run("library.source", json!({"kind": "missing"}));
             }
             ui.add_space(10.0);
-            // Albums header
-            let (ar, albums_open) = sidebar_section_header(app, ui, "albums", "Albums");
-            let mut hdr = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(Rect::from_min_max(pos2(ar.right() - 50.0, ar.top()), ar.right_bottom()))
-                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
-            );
-            let plus = icon_button(&mut hdr, "albumNew", Icon::Plus, vec2(26.0, 26.0), false, true, "Create Album");
-            egui::Popup::menu(&plus).show(|ui| {
-                if ui.button(crate::i18n::tr("Create Album…")).clicked() {
-                    app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: false });
-                }
-                if ui.button(crate::i18n::tr("Create Smart Album…")).clicked() {
-                    app.ui.dialog = Some(crate::state::Dialog::SmartRules {
-                        id: None,
-                        name: String::new(),
-                        rules: lightcraft_catalog::RuleSet { rules: vec![crate::panels::rules_editor::new_rule()], ..Default::default() },
-                    });
-                }
-                if ui.button(crate::i18n::tr("Create Smart Album from Filter…")).clicked() {
-                    app.ui.dialog = Some(crate::state::Dialog::NewSmartAlbum { name: String::new() });
-                }
-                if ui.button(crate::i18n::tr("Create Folder…")).clicked() {
-                    app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: true });
-                }
-            });
-            if albums_open {
-                let albums: Vec<Album> = app.session.catalog.albums().cloned().collect();
-                albums_tree(app, ui, &albums, None, 0.0);
-            }
-            ui.add_space(10.0);
-            local_section(app, ui);
-            // By date
+            // By Date (primary navigation: photos organized chronologically)
             let (_, dates_open) = sidebar_section_header(app, ui, "byDate", "By Date");
             let groups = if dates_open { app.caches.date_groups(&app.session.catalog) } else { Default::default() };
             for g in groups.iter() {
-                // year → month → day; a click filters by that prefix, the triangle opens a level
+                // year -> month -> day; a click filters by that prefix, the triangle opens a level
                 if date_row(app, ui, &g.year, &crate::i18n::date_group_label(&g.year, true), g.count, 0.0) {
                     for (m, n) in &g.months {
                         let label = crate::i18n::date_group_label(m, true);
@@ -158,7 +126,40 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     }
                 }
             }
+            // Albums
+            let (ar, albums_open) = sidebar_section_header(app, ui, "albums", "Albums");
+            let mut hdr = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(Rect::from_min_max(pos2(ar.right() - 50.0, ar.top()), ar.right_bottom()))
+                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
+            );
+            let plus = icon_button(&mut hdr, "albumNew", Icon::Plus, vec2(26.0, 26.0), false, true, "Create Album");
+            egui::Popup::menu(&plus).show(|ui| {
+                if ui.button(crate::i18n::tr("Create Album\u{2026}")).clicked() {
+                    app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: false });
+                }
+                if ui.button(crate::i18n::tr("Create Smart Album\u{2026}")).clicked() {
+                    app.ui.dialog = Some(crate::state::Dialog::SmartRules {
+                        id: None,
+                        name: String::new(),
+                        rules: lightcraft_catalog::RuleSet { rules: vec![crate::panels::rules_editor::new_rule()], ..Default::default() },
+                    });
+                }
+                if ui.button(crate::i18n::tr("Create Smart Album from Filter\u{2026}")).clicked() {
+                    app.ui.dialog = Some(crate::state::Dialog::NewSmartAlbum { name: String::new() });
+                }
+                if ui.button(crate::i18n::tr("Create Folder\u{2026}")).clicked() {
+                    app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: true });
+                }
+            });
+            if albums_open {
+                let albums: Vec<Album> = app.session.catalog.albums().cloned().collect();
+                albums_tree(app, ui, &albums, None, 0.0);
+            }
             keywords_section(app, ui);
+            ui.add_space(10.0);
+            // Folders (secondary: browse files on disk without importing)
+            local_section(app, ui);
             ui.add_space(10.0);
             if row(app, ui, "recentlyDeleted", Icon::Trash, "Recently Deleted", Some(deleted), src == LibrarySource::RecentlyDeleted, 0.0).clicked() {
                 let _ = app.run("library.source", json!({"kind": "recentlyDeleted"}));
@@ -216,7 +217,7 @@ fn local_section(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     if cfg!(target_arch = "wasm32") {
         return;
     }
-    let (_, open) = sidebar_section_header(app, ui, "local", "Local");
+    let (_, open) = sidebar_section_header(app, ui, "local", "Folders");
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default();
     let mut builtin: Vec<(String, String)> = Vec::new();
     if !home.is_empty() {
