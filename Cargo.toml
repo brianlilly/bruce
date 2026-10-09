@@ -32,6 +32,7 @@ lightcraft-mcp = { path = "crates/mcp" }
 lightcraft-fetch = { path = "crates/fetch" }
 lightcraft-segment = { path = "crates/segment" }
 lightcraft-face = { path = "crates/face" }
+lightcraft-face-embed = { path = "crates/face-embed" }
 
 # foundation
 thiserror = "2"

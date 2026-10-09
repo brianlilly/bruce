@@ -2902,6 +2902,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-face-embed"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-fetch"
 version = "0.4.0"
 dependencies = [
