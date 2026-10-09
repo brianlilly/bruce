@@ -344,6 +344,78 @@ pub fn expand_with(paths: &[String], skip: Option<&Path>, progress: Option<&Scan
     out
 }
 
+/// Walk `paths` recursively and send discovered files through `tx` in batches of `batch_size`.
+/// Each batch is a `Vec<String>` of file paths. The walk sends files as soon as a batch fills up
+/// or a directory finishes, so the consumer can start probing while the walk continues.
+/// Returns the total number of files sent.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn expand_streaming(
+    paths: &[String],
+    skip: Option<&Path>,
+    progress: &ScanProgress,
+    tx: &std::sync::mpsc::SyncSender<Vec<String>>,
+    batch_size: usize,
+) -> usize {
+    use std::sync::atomic::Ordering::Relaxed;
+
+    let mut pending = Vec::with_capacity(batch_size);
+    let mut seen = std::collections::HashSet::new();
+    let mut total = 0usize;
+
+    fn walk(
+        p: &Path,
+        skip: Option<&Path>,
+        pending: &mut Vec<String>,
+        seen: &mut std::collections::HashSet<String>,
+        total: &mut usize,
+        top: bool,
+        progress: &ScanProgress,
+        tx: &std::sync::mpsc::SyncSender<Vec<String>>,
+        batch_size: usize,
+    ) -> bool {
+        if progress.cancel.load(Relaxed) {
+            return false;
+        }
+        let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
+        if (hidden && !top) || skip.is_some_and(|s| p == s) {
+            return true;
+        }
+        if p.is_dir() {
+            let Ok(rd) = std::fs::read_dir(p) else { return true };
+            let mut v: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+            v.sort();
+            for c in v {
+                if !walk(&c, skip, pending, seen, total, false, progress, tx, batch_size) {
+                    return false;
+                }
+            }
+        } else if (top || is_supported(p)) && seen.insert(p.to_string_lossy().to_string()) {
+            let s = p.to_string_lossy().to_string();
+            pending.push(s);
+            *total += 1;
+            progress.listing.store(*total, Relaxed);
+            if pending.len() >= batch_size {
+                let batch = std::mem::replace(pending, Vec::with_capacity(batch_size));
+                if tx.send(batch).is_err() {
+                    return false; // receiver dropped
+                }
+            }
+        }
+        true
+    }
+
+    for p in paths {
+        if !walk(Path::new(p), skip, &mut pending, &mut seen, &mut total, true, progress, tx, batch_size) {
+            break;
+        }
+    }
+    // flush remaining files
+    if !pending.is_empty() && !progress.cancel.load(Relaxed) {
+        let _ = tx.send(pending);
+    }
+    total
+}
+
 /// Probe files (headers + content hash) as an import would.
 pub(crate) fn probe_paths(s: &Session, paths: &[String]) -> Vec<Result<ProbeInfo, String>> {
     probe_all(s.media.file_probe.as_ref(), paths, &ScanProgress::default())
@@ -429,7 +501,7 @@ pub struct ScanInput {
 }
 
 /// Progress and cancellation of a running [`scan_with`].
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ScanProgress {
     /// Files to probe, set once the folders are expanded.
     pub total: std::sync::atomic::AtomicUsize,

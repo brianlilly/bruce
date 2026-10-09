@@ -21,6 +21,11 @@ use crate::widgets::register;
 /// Files per batch (each batch joins the catalog as it is ready, so the progress window updates).
 pub(crate) const BATCH: usize = 8;
 
+/// Files per batch for incremental folder browsing: larger than [`BATCH`] because the walker
+/// emits batches as directories are read, and each batch is probed before the next arrives.
+/// Too small wastes time starting probes; too large delays the first photos.
+const BROWSE_BATCH: usize = 32;
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ImportDialog {
@@ -123,6 +128,24 @@ pub struct ImportTask {
     /// Auto Import: the selection to keep.
     keep_selection: Option<lightcraft_engine::Selection>,
     run: Option<ImportRun>,
+    /// Streaming browse: the job and root to start in [`tick`] (needs the egui context).
+    browse_stream: Option<BrowseStream>,
+    /// Progress for a streaming browse (the scan_progress overlay reads this).
+    pub(crate) browse_progress: Option<std::sync::Arc<ScanProgress>>,
+}
+
+/// State for starting a streaming browse in [`tick`]: the [`ImportJob`] and the root path are
+/// moved to the worker thread on the first frame.
+struct BrowseStream {
+    job: lightcraft_engine::import::ImportJob,
+    root: String,
+    progress: std::sync::Arc<ScanProgress>,
+}
+
+impl std::fmt::Debug for BrowseStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrowseStream").field("root", &self.root).finish()
+    }
 }
 
 impl ImportTask {
@@ -191,6 +214,22 @@ impl ImportRun {
         Ok(ImportRun { runner, cancel, total, done, opts, now, album, album_name })
     }
 
+    /// Start a browse that discovers and probes files incrementally: photos appear in the grid
+    /// as directories are read, instead of waiting for the entire tree to be listed first.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn start_streaming(
+        job: lightcraft_engine::import::ImportJob,
+        root: String,
+        progress: std::sync::Arc<ScanProgress>,
+        ctx: &egui::Context,
+    ) -> Result<Self, String> {
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (total, done) = (job.total.clone(), job.done.clone());
+        let (opts, now) = (job.opts.clone(), job.now().to_string());
+        let runner = Self::spawn_streaming(job, root, cancel.clone(), progress, ctx)?;
+        Ok(ImportRun { runner, cancel, total, done, opts, now, album: None, album_name: None })
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn spawn(
         mut job: lightcraft_engine::import::ImportJob,
@@ -220,6 +259,58 @@ impl ImportRun {
             ctx.request_repaint();
         };
         std::thread::Builder::new().name("lc-import".into()).spawn(work).map(|_| Runner::Thread(rx)).map_err(|e| format!("could not start: {e}"))
+    }
+
+    /// Like [`ImportRun::spawn`], but discovers files incrementally by walking the directory tree
+    /// and preparing batches as directories are read. Photos appear in the grid within seconds
+    /// instead of waiting for the entire tree to be listed.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn spawn_streaming(
+        mut job: lightcraft_engine::import::ImportJob,
+        root: String,
+        cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        progress: std::sync::Arc<ScanProgress>,
+        ctx: &egui::Context,
+    ) -> Result<Runner, String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        // Bounded channel keeps the walker from racing too far ahead of the prober.
+        let (file_tx, file_rx) = std::sync::mpsc::sync_channel::<Vec<String>>(4);
+        let walker_progress = progress.clone();
+        let work = move || {
+            // Spawn the directory walker on its own thread so probing starts as soon as the
+            // first batch of files is discovered.
+            let walker = std::thread::Builder::new()
+                .name("lc-browse-walk".into())
+                .spawn(move || lightcraft_engine::import::expand_streaming(&[root], None, &walker_progress, &file_tx, BROWSE_BATCH));
+            let walker = match walker {
+                Ok(h) => h,
+                Err(e) => {
+                    log::warn!("browse walk thread: {e}");
+                    return;
+                }
+            };
+            // Process batches of files as the walker discovers them.
+            while let Ok(files) = file_rx.recv() {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                job.total.fetch_add(files.len(), Ordering::Relaxed);
+                let prepared = match lightcraft_engine::guard::catch("browse", || job.prepare_files(files, &cancel)) {
+                    Ok(p) => p,
+                    Err(_) => break,
+                };
+                if tx.send(prepared).is_err() {
+                    break;
+                }
+                ctx.request_repaint();
+            }
+            // Signal the walker to stop if it's still running.
+            progress.cancel.store(true, Ordering::Relaxed);
+            let _ = walker.join();
+            ctx.request_repaint();
+        };
+        std::thread::Builder::new().name("lc-browse".into()).spawn(work).map(|_| Runner::Thread(rx)).map_err(|e| format!("could not start: {e}"))
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -306,6 +397,10 @@ pub fn open(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value, String
 /// once, the folder is listed and read on a worker thread (a network share can take minutes),
 /// and the photos then join the view in small batches under a progress window. A browse already
 /// running is replaced; the import review's scan is not.
+///
+/// With `subfolders`, the walk is **streamed**: photos appear in the grid as directories are
+/// discovered, instead of waiting for the entire tree to be listed first. This makes browsing a
+/// NAS with thousands of folders usable — the first photos show up within seconds.
 pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> Result<Value, String> {
     let dir = std::path::absolute(std::path::Path::new(path)).map_err(|e| e.to_string())?;
     if !dir.is_dir() {
@@ -317,9 +412,7 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
     let dir_s = dir.to_string_lossy().trim_end_matches(['/', '\\']).to_string();
     // Default to subfolders=true: browsing a folder tree (especially on a NAS) expects to see
     // all its photos. When re-browsing the same folder, keep the previous setting.
-    let subfolders = subfolders.unwrap_or_else(|| {
-        app.session.browse.as_ref().is_none_or(|b| if b.path == dir_s { b.subfolders } else { true })
-    });
+    let subfolders = subfolders.unwrap_or_else(|| app.session.browse.as_ref().is_none_or(|b| if b.path == dir_s { b.subfolders } else { true }));
     let running = app.scan.as_ref().is_some_and(|t| t.browse) || app.import.as_ref().is_some_and(|t| t.browse);
     if running && app.session.browse.as_ref().is_some_and(|b| b.path == dir_s && b.subfolders == subfolders) {
         // already reading this folder: clicking it again must not restart the progress
@@ -332,11 +425,40 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
     app.import = None;
     app.session.browse = Some(lightcraft_engine::Browse { path: dir_s.clone(), subfolders });
     app.session.source = lightcraft_engine::LibrarySource::Folder;
-    let (input, _) = ScanInput::new(&mut app.session, std::slice::from_ref(&dir_s));
+    app.renderer.forget_imports();
+    // With subfolders on native: stream files incrementally so photos appear as directories are
+    // read. Without subfolders (flat listing) or on wasm: the old scan-then-import path works
+    // fine since a single directory is fast.
+    #[cfg(not(target_arch = "wasm32"))]
+    if subfolders {
+        return browse_streaming(app, dir_s);
+    }
+    browse_scan(app, &dir_s, subfolders)
+}
+
+/// Streaming browse: walks the directory tree on one thread, probes and prepares files on
+/// another, and the UI commits each batch as it arrives. Photos appear in seconds.
+#[cfg(not(target_arch = "wasm32"))]
+fn browse_streaming(app: &mut LightcraftApp, dir_s: String) -> Result<Value, String> {
+    let opts = lightcraft_engine::import::ImportOptions { mode: lightcraft_engine::import::ImportMode::Add, local: true, ..Default::default() };
+    let job = lightcraft_engine::import::ImportJob::new(&mut app.session, opts).map_err(|e| e.to_string())?;
+    let progress = std::sync::Arc::new(ScanProgress::default());
+    let undo0 = app.session.undo.len();
+    let mut task = ImportTask { queue: Vec::new(), params: json!({"mode": "add", "local": true}), undo0, browse: true, ..Default::default() };
+    // The streaming runner is created lazily by tick() which has access to the egui context.
+    task.browse_stream = Some(BrowseStream { job, root: dir_s.clone(), progress: progress.clone() });
+    task.browse_progress = Some(progress);
+    app.import = Some(task);
+    Ok(json!({"path": dir_s, "subfolders": true, "scanning": true}))
+}
+
+/// Non-streaming browse: list the directory (flat or recursive), scan, then import.
+fn browse_scan(app: &mut LightcraftApp, dir_s: &str, subfolders: bool) -> Result<Value, String> {
+    let (input, _) = ScanInput::new(&mut app.session, std::slice::from_ref(&dir_s.to_string()));
     let progress = std::sync::Arc::new(ScanProgress::default());
     let (tx, rx) = std::sync::mpsc::channel();
     let p = progress.clone();
-    let root = dir_s.clone();
+    let root = dir_s.to_string();
     let job = move || {
         let files: Vec<String> = if subfolders {
             lightcraft_engine::import::expand_with(&[root], None, Some(&p))
@@ -367,7 +489,6 @@ pub fn browse(app: &mut LightcraftApp, path: &str, subfolders: Option<bool>) -> 
     #[cfg(target_arch = "wasm32")]
     job();
     app.scan = Some(ScanTask { progress, rx, copy: false, browse: true, sources: Vec::new() });
-    app.renderer.forget_imports();
     Ok(json!({"path": dir_s, "subfolders": subfolders, "scanning": true}))
 }
 
@@ -522,21 +643,36 @@ pub fn start_paths(app: &mut LightcraftApp, paths: Vec<String>) -> Result<Value,
 pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
     let Some(mut task) = app.import.take() else { return };
     if task.run.is_none() {
-        let mut p = task.params.clone();
-        p["paths"] = json!(task.queue);
-        let started = lightcraft_engine::cmd::library::import_params(&app.session, &p)
-            .and_then(|req| Ok((lightcraft_engine::import::ImportJob::new(&mut app.session, req.opts)?, req.album, req.album_name)))
-            .map_err(|e| e.to_string())
-            .and_then(|(job, album, name)| ImportRun::start(job, std::mem::take(&mut task.queue), album, name, ctx));
-        if task.auto {
-            task.keep_selection = Some(app.session.selection.clone());
+        // Streaming browse: start the incremental walk+probe pipeline.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(bs) = task.browse_stream.take() {
+            match ImportRun::start_streaming(bs.job, bs.root, bs.progress, ctx) {
+                Ok(run) => task.run = Some(run),
+                Err(e) => {
+                    log::warn!("browse: {e}");
+                    app.toast(ctx, format!("Browse failed: {e}"));
+                    return;
+                }
+            }
         }
-        match started {
-            Ok(run) => task.run = Some(run),
-            Err(e) => {
-                log::warn!("import: {e}");
-                app.toast(ctx, format!("Import failed: {e}"));
-                return;
+        // Normal import: build an ImportJob from the params and start the worker.
+        if task.run.is_none() {
+            let mut p = task.params.clone();
+            p["paths"] = json!(task.queue);
+            let started = lightcraft_engine::cmd::library::import_params(&app.session, &p)
+                .and_then(|req| Ok((lightcraft_engine::import::ImportJob::new(&mut app.session, req.opts)?, req.album, req.album_name)))
+                .map_err(|e| e.to_string())
+                .and_then(|(job, album, name)| ImportRun::start(job, std::mem::take(&mut task.queue), album, name, ctx));
+            if task.auto {
+                task.keep_selection = Some(app.session.selection.clone());
+            }
+            match started {
+                Ok(run) => task.run = Some(run),
+                Err(e) => {
+                    log::warn!("import: {e}");
+                    app.toast(ctx, format!("Import failed: {e}"));
+                    return;
+                }
             }
         }
     }
@@ -690,9 +826,23 @@ fn show_existing(app: &mut LightcraftApp, ctx: &egui::Context, existing: &[u64])
 pub fn progress(app: &mut LightcraftApp, ctx: &egui::Context) {
     let Some(task) = &app.import else { return };
     let t = Tokens::get(ctx);
-    let frac = task.done as f32 / task.total.max(1) as f32;
+    // For a streaming browse the total grows as the walker discovers files, so the listing
+    // counter (files found by the walker) is a better denominator until the walk finishes.
+    let browse_listing = task.browse_progress.as_ref().map(|p| p.listing.load(Ordering::Relaxed)).unwrap_or(0);
+    let frac = if browse_listing > 0 {
+        // The walker is (or was) running: show probed-so-far out of discovered-so-far.
+        task.done as f32 / browse_listing.max(1) as f32
+    } else {
+        task.done as f32 / task.total.max(1) as f32
+    };
     let text = if task.cancelled {
         crate::i18n::tr("Stopping…").to_string()
+    } else if task.browse && browse_listing > 0 && task.done == 0 {
+        // Walker is running but nothing probed yet: show discovery count.
+        format!("{} ({browse_listing} found)", crate::i18n::tr("Reading folder…"))
+    } else if task.browse && browse_listing > task.total {
+        // Walker is ahead of prober: show both counts so the user sees discovery and probing.
+        format!("Reading photos… {} of {} ({browse_listing} found)", task.done, task.total)
     } else if task.browse {
         crate::i18n::tr_format!("Reading photos… {} of {}", task.done, task.total)
     } else {
@@ -715,6 +865,10 @@ pub fn progress(app: &mut LightcraftApp, ctx: &egui::Context) {
         task.cancelled = true;
         if let Some(run) = &task.run {
             run.cancel.store(true, Ordering::Relaxed);
+        }
+        // Stop the walker thread for a streaming browse.
+        if let Some(p) = &task.browse_progress {
+            p.cancel.store(true, Ordering::Relaxed);
         }
     }
 }
