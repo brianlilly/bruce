@@ -634,20 +634,17 @@ impl LightcraftApp {
             }
         }
         self.ui.was_focused = focused;
-        // auto import: list the watched folder every few seconds (on a worker thread: it may be on
-        // a network share), then import what's new like any import (also on a worker thread)
+        // auto import: list the watched folders every few seconds (on a worker thread: they may be
+        // on a network share), then import what's new like any import (also on a worker thread)
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(folder) = self.session.import_defaults.auto_folder.clone() {
+        if !self.session.import_defaults.auto_folders.is_empty() {
             const LABEL: &str = "Auto Import";
             let now = ctx.input(|i| i.time);
             if now - self.ui.auto_import_at >= 3.0 && self.import.is_none() && !self.tasks.is_running(LABEL) {
                 self.ui.auto_import_at = now;
-                let work = move || lightcraft_engine::cmd::library::list_auto_import_folder(&folder);
-                let done = |app: &mut LightcraftApp, _ctx: &egui::Context, listing: Result<Vec<(String, u64)>, String>| {
-                    let listing = match listing {
-                        Ok(l) => l,
-                        Err(e) => return log::debug!("auto import: {e}"),
-                    };
+                let folders = self.session.import_defaults.auto_folders.clone();
+                let work = move || lightcraft_engine::cmd::library::list_auto_import_folders(&folders);
+                let done = |app: &mut LightcraftApp, _ctx: &egui::Context, listing: Vec<(String, u64)>| {
                     let p = serde_json::json!({"listing": listing, "start": false});
                     let Ok(r) = app.session.execute("library.autoImportScan", &p) else { return };
                     let Some(mut params) = r.get("import").cloned().filter(|_| app.import.is_none()) else { return };

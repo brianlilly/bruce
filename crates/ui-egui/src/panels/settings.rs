@@ -304,23 +304,39 @@ fn import_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
     });
     if !cfg!(target_arch = "wasm32") {
         heading(ui, t, crate::i18n::tr("Auto Import"));
-        hint(ui, t, crate::i18n::tr("Photos that arrive in this folder (tethering, a scanner, a sync app) are added as soon as they're complete."));
-        row(ui, t, crate::i18n::tr("Watched folder"), |ui| {
-            ui.label(RichText::new(d.auto_folder.clone().unwrap_or_else(|| "Off".into())).color(t.text));
+        hint(ui, t, crate::i18n::tr("Photos that arrive in these folders (tethering, a scanner, a sync app) are added as soon as they're complete. Subfolders are scanned too."));
+        row(ui, t, crate::i18n::tr("Watched folders"), |ui| {
             let can = app.services.pick_folder.is_some();
-            let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Choose…")));
+            let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Add Folder…")));
             register(ui.ctx(), "button:settingsAutoFolder", r.rect);
             if r.clicked()
                 && let Some(f) = app.services.pick_folder.as_mut().and_then(|f| f())
-                && let Err(e) = app.run("library.autoImport", json!({"folder": f}))
+                && let Err(e) = app.run("library.autoImport", json!({"add": f}))
             {
                 app.toast(ui.ctx(), e);
             }
-            if d.auto_folder.is_some() && ui.button(crate::i18n::tr("Turn Off")).clicked() {
-                let _ = app.run("library.autoImport", json!({"folder": null}));
-            }
         });
-        if d.auto_folder.is_some() {
+        let folders = d.auto_folders.clone();
+        if folders.is_empty() {
+            row(ui, t, "", |ui| {
+                ui.label(RichText::new("No folders are being watched.").color(t.text_dim));
+            });
+        }
+        let mut to_remove = None;
+        for (i, folder) in folders.iter().enumerate() {
+            row(ui, t, "", |ui| {
+                ui.label(RichText::new(folder).color(t.text));
+                if ui.button("✕").on_hover_text(crate::i18n::tr("Remove")).clicked() {
+                    to_remove = Some(i);
+                }
+            });
+        }
+        if let Some(i) = to_remove
+            && let Some(f) = folders.get(i)
+        {
+            let _ = app.run("library.autoImport", json!({"remove": f}));
+        }
+        if !d.auto_folders.is_empty() {
             row(ui, t, "", |ui| {
                 let mut copy = d.auto_copy;
                 if ui.checkbox(&mut copy, crate::i18n::tr("Copy into the library (else use the files where they are)")).changed() {

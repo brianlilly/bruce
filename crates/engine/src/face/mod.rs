@@ -31,6 +31,7 @@ const WAIT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 /// Maximum edge (longest side) of the image fed to the detector. The model accepts 640×640;
 /// the photo is scaled down to fit this (keeping aspect, no letterbox needed — the face crate
 /// handles letterboxing internally).
+#[cfg(feature = "face")]
 const DETECT_EDGE: usize = 1024;
 
 /// A face detection result ready for the session: the photo and its detected regions.
@@ -119,6 +120,7 @@ impl FaceDetector {
 /// Convert pixel-coordinate `lightcraft_face::Face` boxes into normalized `Region` values
 /// suitable for the catalog. `img_w` and `img_h` are the dimensions of the image that was
 /// actually fed to the detector (after any downscale).
+#[cfg(feature = "face")]
 fn faces_to_regions(faces: &[lightcraft_face::Face], img_w: usize, img_h: usize) -> Vec<Region> {
     if img_w == 0 || img_h == 0 {
         return Vec::new();
@@ -200,9 +202,9 @@ impl Session {
     /// Collect finished background face-detection results. Cheap when nothing is pending:
     /// call it every frame.
     pub fn face_detect_poll(&mut self) -> Vec<Result<DetectedFaces, String>> {
-        let mut results = Vec::new();
         #[cfg(feature = "face")]
         {
+            let mut results = Vec::new();
             for o in self.face_detector.results.1.try_iter() {
                 match o.result {
                     Ok(faces) => {
@@ -214,12 +216,14 @@ impl Session {
                     }
                 }
             }
+            results
         }
-        results
+        #[cfg(not(feature = "face"))]
+        Vec::new()
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "face"))]
 mod tests {
     use super::*;
 

@@ -7,18 +7,44 @@ use serde_json::{Value, json};
 use super::{CommandSpec, always, bad, bool_or, cmd, has_active, has_selection, ok, str_param};
 use crate::{LibrarySource, Result, Selection, Session};
 
-/// The auto-import folder's visible files with their sizes (the file-system half of
+/// The auto-import folder's visible files (recursive) with their sizes (the file-system half of
 /// `library.autoImportScan`; the app lists on a worker thread and passes `listing`).
 pub fn list_auto_import_folder(folder: &str) -> std::result::Result<Vec<(String, u64)>, String> {
-    let rd = std::fs::read_dir(folder).map_err(|e| format!("{folder}: {e}"))?;
-    Ok(rd
-        .flatten()
-        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
-        .filter_map(|e| {
-            let m = std::fs::metadata(e.path()).ok()?;
-            m.is_file().then(|| (e.path().to_string_lossy().to_string(), m.len()))
-        })
-        .collect())
+    let mut out = Vec::new();
+    list_auto_import_walk(std::path::Path::new(folder), &mut out)?;
+    Ok(out)
+}
+
+fn list_auto_import_walk(dir: &std::path::Path, out: &mut Vec<(String, u64)>) -> std::result::Result<(), String> {
+    let rd = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut entries: Vec<std::fs::DirEntry> = rd.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for e in entries {
+        if e.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let path = e.path();
+        if let Ok(m) = std::fs::metadata(&path) {
+            if m.is_file() {
+                out.push((path.to_string_lossy().to_string(), m.len()));
+            } else if m.is_dir() {
+                // recurse; ignore errors in subdirs (permissions, broken symlinks)
+                let _ = list_auto_import_walk(&path, out);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// List multiple auto-import folders (recursive), combining all results.
+pub fn list_auto_import_folders(folders: &[String]) -> Vec<(String, u64)> {
+    let mut out = Vec::new();
+    for folder in folders {
+        if let Ok(files) = list_auto_import_folder(folder) {
+            out.extend(files);
+        }
+    }
+    out
 }
 
 /// `library.import`'s params, checked (no file-system calls).
@@ -833,15 +859,34 @@ pub fn specs() -> Vec<CommandSpec> {
             "Auto Import Settings",
             [],
             None,
-            "{folder?: path | null (off), copy?: bool (copy into the library's Originals, else add in place), album?: name | null} — a watched folder whose new photos are added as they arrive (library.autoImportScan; the app scans every few seconds) → the settings",
+            "{add?: path, remove?: path, clear?: bool, copy?: bool, album?: name | null} — watched folders whose new photos are added as they arrive (library.autoImportScan; the app scans every few seconds) → the settings. `add` adds a folder, `remove` removes one, `clear` removes all.",
             always,
             |s, p| {
+                if let Some(f) = p.get("add").and_then(Value::as_str).map(str::trim).filter(|f| !f.is_empty()) {
+                    if !std::path::Path::new(f).is_dir() && !cfg!(target_arch = "wasm32") {
+                        return Err(bad("library.autoImport", format!("`{f}` is not a folder")));
+                    }
+                    if !s.import_defaults.auto_folders.iter().any(|x| x == f) {
+                        s.import_defaults.auto_folders.push(f.to_string());
+                    }
+                }
+                // Legacy: "folder" sets the list to that one folder (or clears it with null)
                 if let Some(f) = p.get("folder") {
-                    s.import_defaults.auto_folder = match f.as_str().map(str::trim).filter(|f| !f.is_empty()) {
-                        Some(f) if std::path::Path::new(f).is_dir() || cfg!(target_arch = "wasm32") => Some(f.to_string()),
+                    match f.as_str().map(str::trim).filter(|f| !f.is_empty()) {
+                        Some(f) if std::path::Path::new(f).is_dir() || cfg!(target_arch = "wasm32") => {
+                            if !s.import_defaults.auto_folders.iter().any(|x| x == f) {
+                                s.import_defaults.auto_folders.push(f.to_string());
+                            }
+                        }
                         Some(f) => return Err(bad("library.autoImport", format!("`{f}` is not a folder"))),
-                        None => None,
-                    };
+                        None => s.import_defaults.auto_folders.clear(),
+                    }
+                }
+                if let Some(r) = p.get("remove").and_then(Value::as_str).map(str::trim) {
+                    s.import_defaults.auto_folders.retain(|x| x != r);
+                }
+                if p.get("clear").and_then(Value::as_bool) == Some(true) {
+                    s.import_defaults.auto_folders.clear();
                 }
                 if let Some(c) = p.get("copy").and_then(Value::as_bool) {
                     s.import_defaults.auto_copy = c;
@@ -851,7 +896,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 }
                 s.save_prefs()?;
                 let d = &s.import_defaults;
-                Ok(json!({"folder": d.auto_folder, "copy": d.auto_copy, "album": d.auto_album}))
+                Ok(json!({"folders": d.auto_folders, "copy": d.auto_copy, "album": d.auto_album}))
             }
         ),
         cmd!(
@@ -859,10 +904,11 @@ pub fn specs() -> Vec<CommandSpec> {
             "Auto Import Now",
             [],
             None,
-            "{listing?: [[path, size]] (the folder as listed by the caller, e.g. on a worker thread), start?: bool (false: return the `library.import` params as `import` instead of importing)} — add the watched folder's new photos (files the library doesn't have yet; partial / still-copying files wait for the next scan) → {imported, folder, import?}",
+            "{listing?: [[path, size]] (the folders as listed by the caller, e.g. on a worker thread), start?: bool (false: return the `library.import` params as `import` instead of importing)} — add the watched folders' new photos (files the library doesn't have yet; partial / still-copying files wait for the next scan) → {imported, folders, import?}",
             always,
             |s, p| {
-                let Some(folder) = s.import_defaults.auto_folder.clone() else { return Ok(json!({"imported": [], "folder": null})) };
+                let folders = s.import_defaults.auto_folders.clone();
+                if folders.is_empty() { return Ok(json!({"imported": [], "folders": []})) }
                 // only files that stopped growing: a file still being written is left for later
                 let known: std::collections::HashSet<String> = s
                     .catalog
@@ -872,10 +918,10 @@ pub fn specs() -> Vec<CommandSpec> {
                         _ => None,
                     })
                     .collect();
-                // the folder's files and sizes: listed here, or already listed on a worker thread (the app)
+                // the folders' files and sizes: listed here, or already listed on a worker thread (the app)
                 let listing: Vec<(String, u64)> = match p.get("listing").and_then(Value::as_array) {
                     Some(l) => l.iter().filter_map(|e| Some((e.get(0)?.as_str()?.to_string(), e.get(1)?.as_u64()?))).collect(),
-                    None => list_auto_import_folder(&folder).map_err(|e| bad("library.autoImportScan", e))?,
+                    None => list_auto_import_folders(&folders),
                 };
                 let mut fresh = Vec::new();
                 for (ps, size) in listing {
@@ -892,7 +938,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     }
                 }
                 if fresh.is_empty() {
-                    return Ok(json!({"imported": [], "folder": folder}));
+                    return Ok(json!({"imported": [], "folders": folders}));
                 }
                 let mode = if s.import_defaults.auto_copy { "copy" } else { "add" };
                 let mut params = json!({"paths": fresh, "mode": mode});
@@ -907,13 +953,13 @@ pub fn specs() -> Vec<CommandSpec> {
                 }
                 if p.get("start").and_then(Value::as_bool) == Some(false) {
                     // the caller imports them (the app: on a worker thread)
-                    return Ok(json!({"imported": [], "folder": folder, "import": params}));
+                    return Ok(json!({"imported": [], "folders": folders, "import": params}));
                 }
                 let sel = s.selection.clone();
                 let r = s.execute("library.import", &params)?;
                 // arriving photos don't take over the selection
                 s.selection = sel;
-                Ok(json!({"imported": r["imported"], "folder": folder}))
+                Ok(json!({"imported": r["imported"], "folders": folders}))
             }
         ),
         cmd!("album.removePhotos", "Remove from Album", [], None, "{id: albumId, ids?}", has_selection, |s, p| {

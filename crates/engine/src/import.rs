@@ -218,10 +218,13 @@ pub struct ImportDefaults {
     pub creator: String,
     /// Metadata preset applied to every imported photo (`metadata.*`; `None` = none).
     pub metadata_preset: Option<String>,
-    /// Auto import: a watched folder whose new photos are added as they arrive (`None` = off),
+    /// Auto import: watched folders whose new photos are added as they arrive (empty = off),
     /// copied into the library's Originals instead of added in place when `auto_copy`, and an
     /// album they go to.
-    pub auto_folder: Option<String>,
+    pub auto_folders: Vec<String>,
+    /// Legacy single watched folder (migrated into `auto_folders` on load).
+    #[serde(skip_serializing)]
+    auto_folder: Option<String>,
     pub auto_copy: bool,
     pub auto_album: Option<String>,
 }
@@ -236,6 +239,16 @@ pub struct CameraDefault {
 }
 
 impl ImportDefaults {
+    /// Migrate the old single `autoFolder` field into `auto_folders`.
+    pub fn migrate(&mut self) {
+        if let Some(f) = self.auto_folder.take()
+            && !f.is_empty()
+            && !self.auto_folders.iter().any(|x| x == &f)
+        {
+            self.auto_folders.push(f);
+        }
+    }
+
     /// The preset id that applies to a photo of this kind and camera, if any.
     pub fn preset_for(&self, raw: bool, camera: &str) -> Option<&str> {
         if !raw {
