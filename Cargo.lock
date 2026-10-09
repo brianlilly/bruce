@@ -2870,6 +2870,7 @@ dependencies = [
  "lightcraft-color",
  "lightcraft-develop",
  "lightcraft-face",
+ "lightcraft-face-embed",
  "lightcraft-geom",
  "lightcraft-gpu",
  "lightcraft-merge",

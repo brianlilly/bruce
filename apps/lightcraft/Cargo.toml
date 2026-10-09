@@ -14,7 +14,7 @@ develop = ["lightcraft-ui-egui/develop"]
 workspace = true
 
 [dependencies]
-lightcraft-engine = { workspace = true, features = ["sam", "face"] }
+lightcraft-engine = { workspace = true, features = ["sam", "face", "face-embed"] }
 lightcraft-sysmem = { workspace = true }
 lightcraft-ui-egui = { workspace = true }
 lightcraft-codecs = { workspace = true }

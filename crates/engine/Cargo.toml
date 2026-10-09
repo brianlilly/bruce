@@ -32,12 +32,15 @@ log = { workspace = true }
 ab_glyph = { workspace = true }
 lightcraft-segment = { workspace = true, optional = true }
 lightcraft-face = { workspace = true, optional = true }
+lightcraft-face-embed = { workspace = true, optional = true }
 
 [features]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
 sam = ["dep:lightcraft-segment"]
 # Face detection with SCRFD-500M. Off for the web and CLI builds.
 face = ["dep:lightcraft-face"]
+# Face embedding with AdaFace IResNet-18. Off for the web and CLI builds.
+face-embed = ["dep:lightcraft-face-embed"]
 
 [dev-dependencies]
 libc = { workspace = true }

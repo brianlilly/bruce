@@ -18,6 +18,7 @@ pub mod crs;
 pub mod crs_masks;
 pub mod demo;
 pub mod devices;
+pub mod embed;
 pub mod export;
 pub mod face;
 pub mod files;
@@ -160,6 +161,8 @@ pub struct Session {
     pub segmenter: segment::Segmenter,
     /// Face detection (SCRFD-500M): model, worker thread and results.
     pub face_detector: face::FaceDetector,
+    /// Face embedding (AdaFace IResNet-18): model, worker thread and results.
+    pub face_embedder: embed::FaceEmbedModule,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -250,6 +253,7 @@ impl Session {
             active_mask: None,
             segmenter: segment::Segmenter::default(),
             face_detector: face::FaceDetector::default(),
+            face_embedder: embed::FaceEmbedModule::default(),
             active_spot: None,
             library: None,
             xmp: sidecar::XmpPrefs::default(),

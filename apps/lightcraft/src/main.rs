@@ -518,6 +518,10 @@ fn main() -> eframe::Result {
             session.face_detector.dir =
                 std::env::var_os("BRUCE_FACE_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("scrfd")));
             session.face_detector.background = true;
+            // Face embedding: AdaFace IResNet-18 weights in <config>/models/adaface, or BRUCE_EMBED_DIR
+            session.face_embedder.dir =
+                std::env::var_os("BRUCE_EMBED_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("adaface")));
+            session.face_embedder.background = true;
             let mut app = LightcraftApp::new(session, services());
             if let Some(ui) = prefs {
                 app.ui = ui;
