@@ -21,6 +21,7 @@ pub mod devices;
 pub mod embed;
 pub mod export;
 pub mod face;
+pub mod face_index;
 pub mod files;
 pub mod fonts;
 pub mod guard;
@@ -163,6 +164,8 @@ pub struct Session {
     pub face_detector: face::FaceDetector,
     /// Face embedding (AdaFace IResNet-18): model, worker thread and results.
     pub face_embedder: embed::FaceEmbedModule,
+    /// Persistent face embedding index (for clustering).
+    pub face_index: face_index::FaceIndex,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -254,6 +257,7 @@ impl Session {
             segmenter: segment::Segmenter::default(),
             face_detector: face::FaceDetector::default(),
             face_embedder: embed::FaceEmbedModule::default(),
+            face_index: face_index::FaceIndex::default(),
             active_spot: None,
             library: None,
             xmp: sidecar::XmpPrefs::default(),

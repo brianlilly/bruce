@@ -371,6 +371,20 @@ impl Session {
         if on_disk {
             self.media.attach_disk_cache(&dir.join("thumbs"), self.cache_bytes());
         }
+        // face embedding index
+        match files.read(crate::face_index::FACES_FILE) {
+            Ok(Some(data)) => match crate::face_index::FaceIndex::load(&data) {
+                Ok(idx) => {
+                    log::info!("library: loaded {} face embeddings", idx.len());
+                    self.face_index = idx;
+                }
+                Err(e) => log::error!("library: faces: {e}"),
+            },
+            Ok(None) => {
+                self.face_index = crate::face_index::FaceIndex::default();
+            }
+            Err(e) => log::error!("library: faces: {e}"),
+        }
         let view_written = self.view_json();
         self.library = Some(Library {
             dir,
@@ -437,6 +451,16 @@ impl Session {
         {
             log::error!("library: compaction: {e}");
             lib.last_error = Some(format!("compaction: {e}"));
+        }
+        // face embedding index
+        if self.face_index.dirty() {
+            let data = self.face_index.save();
+            if let Some(lib) = self.library.as_mut() {
+                match lib.files.write_atomic(crate::face_index::FACES_FILE, &data) {
+                    Ok(()) => self.face_index.mark_clean(),
+                    Err(e) => log::error!("library: faces: {e}"),
+                }
+            }
         }
         let presets = presets_json(self);
         let Some(lib) = self.library.as_mut() else { return Ok(()) };
