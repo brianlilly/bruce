@@ -27,10 +27,10 @@ pub(crate) const BATCH: usize = 8;
 const BROWSE_BATCH: usize = 64;
 
 /// Files per probe chunk: the prober splits each walker batch into sub-batches of this size
-/// and sends each to the UI thread as soon as it is ready. Small chunks mean the first photos
-/// appear quickly even on a slow NAS. 4 files at ~1 s/probe = first thumbnails in ~1 second
-/// (parallel probing finishes them all at once).
-const PROBE_CHUNK: usize = 4;
+/// and sends each to the UI thread as soon as it is ready. Smaller chunks mean the first photos
+/// appear quickly even on a slow NAS, but each chunk becomes a separate catalog commit with
+/// persistence overhead. 32 balances responsiveness with throughput.
+const PROBE_CHUNK: usize = 32;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -703,7 +703,16 @@ pub fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
     let Some(run) = task.run.as_mut() else { return };
     let batches = run.next_batches();
     let finished = batches.is_none();
+    // Merge all ready batches into a single commit to avoid per-batch persistence overhead
+    // (journal append, possible catalog snapshot, sidecar writes).
+    let mut merged: Option<lightcraft_engine::import::Prepared> = None;
     for prepared in batches.into_iter().flatten() {
+        match merged.as_mut() {
+            Some(m) => m.merge(prepared),
+            None => merged = Some(prepared),
+        }
+    }
+    if let Some(prepared) = merged {
         commit_batch(app, &mut task, prepared);
         // arriving photos don't take over the selection
         if let Some(sel) = &task.keep_selection {

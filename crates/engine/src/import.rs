@@ -714,6 +714,12 @@ impl Prepared {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
+
+    /// Merge another batch into this one (used to combine probe chunks into fewer commits).
+    pub fn merge(&mut self, other: Prepared) {
+        self.scanned += other.scanned;
+        self.items.extend(other.items);
+    }
 }
 
 impl ImportJob {
@@ -937,6 +943,11 @@ impl ImportJob {
 /// a Move's sources are removed once it is saved). On a failed commit a Move's placed files are
 /// taken back.
 pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepared: Prepared) -> crate::Result<ImportReport> {
+    // Browse (local) records are freshly discovered files — nothing to write back to XMP.
+    // Skip the O(n) StemOwners rebuild that auto_write_sidecars triggers per commit.
+    if opts.local {
+        s.skip_auto_write = true;
+    }
     let now = now.to_string();
     let mut report = ImportReport { scanned: prepared.scanned, ..Default::default() };
     let mut ops = Vec::new();
@@ -944,6 +955,9 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     let mut placed: Vec<crate::import_move::Placed> = Vec::new();
     // photos added by this batch, by content (a duplicate of a file earlier in the import names it)
     let mut new_hash: HashMap<String, PhotoId> = HashMap::new();
+    // Build a hash→id index once instead of scanning the catalog linearly per duplicate.
+    // Only built lazily on first need (most batches have no unresolved hash duplicates).
+    let mut catalog_hash_index: Option<HashMap<String, PhotoId>> = None;
     for it in prepared.items {
         match it {
             PreparedItem::Promote(id) => {
@@ -955,7 +969,11 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
             PreparedItem::Duplicate { path, existing, reason, hash } => {
                 let existing = existing.or_else(|| {
                     let h = hash?;
-                    new_hash.get(&h).copied().or_else(|| s.catalog.photos().find(|p| p.content_hash.as_deref() == Some(h.as_str())).map(|p| p.id))
+                    new_hash.get(&h).copied().or_else(|| {
+                        let idx = catalog_hash_index
+                            .get_or_insert_with(|| s.catalog.photos().filter_map(|p| Some((p.content_hash.as_ref()?.clone(), p.id))).collect());
+                        idx.get(&h).copied()
+                    })
                 });
                 report.duplicates.push(Duplicate { path, existing: existing.map(|i| i.0), reason });
             }
