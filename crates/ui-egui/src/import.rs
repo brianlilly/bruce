@@ -737,6 +737,7 @@ fn commit_batch(app: &mut LightcraftApp, task: &mut ImportTask, prepared: lightc
                 run.album = Some(a);
             }
             let len = |k: &str| v[k].as_array().map_or(0, Vec::len);
+            log::info!("commit_batch: imported={} duplicates={} failed={}", len("imported"), len("duplicates"), len("failed"));
             task.imported += len("imported");
             task.duplicates += len("duplicates");
             task.existing.extend(v["duplicates"].as_array().into_iter().flatten().filter_map(|d| d["existing"].as_u64()));

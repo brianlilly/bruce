@@ -219,6 +219,14 @@ fn folder_paths() {
     assert!(in_folder("/a/b/x/c.jpg", "/a/b", true));
     assert!(!in_folder("/a/bc/d.jpg", "/a/b", true), "a sibling with the same prefix");
     assert!(in_folder("C:\\Pics\\a.jpg", "C:\\Pics", false));
+    // Mixed separators.
+    assert!(in_folder("C:\\Pics/a.jpg", "C:/Pics", false));
+    // On Windows, paths are case-insensitive; on other platforms in_folder is case-sensitive,
+    // so this assertion is conditional.
+    if cfg!(windows) {
+        assert!(in_folder("U:\\Photos\\sub\\a.jpg", "U:\\photos\\Sub", true));
+        assert!(in_folder("U:\\Photos\\a.jpg", "u:\\Photos", false));
+    }
 }
 
 #[test]

@@ -614,10 +614,31 @@ impl Session {
             if self.source == LibrarySource::Folder {
                 // no folder chosen: nothing (an empty path matches nothing)
                 let b = self.browse.clone().unwrap_or_default();
-                f.folder = Some(b.path);
+                f.folder = Some(b.path.clone());
                 f.subfolders = b.subfolders;
+                // Log once when the browse path changes (not every revision bump).
+                let folder_log_key = format!("folder-logged:{}", b.path);
+                if self.visible_key.as_ref().map(|k| !k.1.contains(&folder_log_key)).unwrap_or(true) {
+                    log::info!("visible: folder={:?} subfolders={}", b.path, b.subfolders);
+                }
             }
             let mut visible = self.catalog.query(&f, &self.sort);
+            if self.source == LibrarySource::Folder && visible.is_empty() {
+                let total_photos = self.catalog.photos().count();
+                let local_photos = self.catalog.photos().filter(|p| p.local).count();
+                if local_photos > 0 {
+                    log::warn!("visible: folder view empty but {local_photos} local photos exist (of {total_photos} total)");
+                    // log a sample photo path for debugging path mismatch
+                    if let Some(p) = self.catalog.photos().filter(|p| p.local).next() {
+                        let path = match &p.source { lightcraft_catalog::Source::File { path } => path.as_str(), _ => "<no-path>" };
+                        log::warn!("visible: sample local photo path={path:?}");
+                        if let Some(dir) = &f.folder {
+                            log::warn!("visible: browse.path={dir:?} subfolders={}", f.subfolders);
+                            log::warn!("visible: in_folder result={}", lightcraft_catalog::query::in_folder(path, dir, f.subfolders));
+                        }
+                    }
+                }
+            }
             if matches!(self.source, LibrarySource::Album(_))
                 && self.sort.key == lightcraft_catalog::SortKey::CaptureDate
                 && let LibrarySource::Album(a) = self.source

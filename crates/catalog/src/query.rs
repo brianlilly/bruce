@@ -430,12 +430,14 @@ pub struct DateGroup {
 }
 
 /// Whether file `path` is directly in `dir` (or anywhere below it with `deep`). Both `/` and `\\`
-/// separate.
+/// separate. On Windows the comparison is case-insensitive and normalises separators / drive
+/// letters / verbatim prefixes via [`folder_key`].
 pub fn in_folder(path: &str, dir: &str, deep: bool) -> bool {
-    let dir = dir.trim_end_matches(['/', '\\']);
-    let Some(rest) = path.strip_prefix(dir) else { return false };
-    let Some(rest) = rest.strip_prefix(['/', '\\']) else { return false };
-    !rest.is_empty() && (deep || !rest.contains(['/', '\\']))
+    let p = folder_key(path);
+    let d = folder_key(dir);
+    let Some(rest) = p.strip_prefix(d.as_str()) else { return false };
+    let Some(rest) = rest.strip_prefix('/') else { return false };
+    !rest.is_empty() && (deep || !rest.contains('/'))
 }
 
 /// A folder path's identity, for telling whether two spellings name the same folder: `/` and
