@@ -80,7 +80,7 @@ struct Queued {
 }
 
 /// Variant thumbnails kept as textures (LRU).
-pub const VARIANT_TEXTURES: usize = 96;
+pub const VARIANT_TEXTURES: usize = 192;
 /// Priority of variant thumbnail jobs: below on-screen grid thumbnails and the loupe.
 const VARIANT_PRIORITY: u32 = 6;
 
@@ -375,7 +375,7 @@ impl Renderer {
     /// variant textures beyond the budget.
     fn evict_variants(&mut self) {
         let now = self.frame;
-        let stale = |used: Option<&u64>| used.is_none_or(|f| now.saturating_sub(*f) > 2);
+        let stale = |used: Option<&u64>| used.is_none_or(|f| now.saturating_sub(*f) > 30);
         let used = &self.variant_used;
         let dropped = self.pool.reprioritize(|s, p| match s {
             Slot::Variant(k) if stale(used.get(k)) => None,

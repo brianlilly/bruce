@@ -629,7 +629,7 @@ impl Session {
                 if local_photos > 0 {
                     log::warn!("visible: folder view empty but {local_photos} local photos exist (of {total_photos} total)");
                     // log a sample photo path for debugging path mismatch
-                    if let Some(p) = self.catalog.photos().filter(|p| p.local).next() {
+                    if let Some(p) = self.catalog.photos().find(|p| p.local) {
                         let path = match &p.source { lightcraft_catalog::Source::File { path } => path.as_str(), _ => "<no-path>" };
                         log::warn!("visible: sample local photo path={path:?}");
                         if let Some(dir) = &f.folder {
