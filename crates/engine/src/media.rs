@@ -708,6 +708,23 @@ impl crate::Session {
         self.build_job(id, b, b, false, true, Some(b))
     }
 
+    /// Compute the disk cache key for a thumbnail without building a full render job.
+    /// Returns `None` if the photo doesn't exist in the catalog.
+    pub fn thumb_disk_key(&mut self, id: PhotoId, bucket: usize) -> Option<Hash128> {
+        let p = self.catalog.photo(id)?;
+        let ck = content_key(p);
+        let settings_hash = self.media.settings_hashes.get(id, &p.develop.clone());
+        Some(
+            Hasher128::new()
+                .str(&ck)
+                .u64(settings_hash)
+                .u64(bucket as u64)
+                .u64(RENDER_CACHE_VERSION)
+                .u64(crate::camera_profiles::cache_key())
+                .finish(),
+        )
+    }
+
     fn build_job(
         &mut self,
         id: PhotoId,

@@ -29,6 +29,8 @@ pub enum Slot {
     Thumb(PhotoId),
     /// A thumbnail's stand-in (embedded preview of an unedited raw).
     ThumbQuick(PhotoId),
+    /// Background pre-generation: populates the disk cache, no texture uploaded.
+    Precache(PhotoId),
     Main,
     /// The loupe's stand-in until `Main` has the photo.
     Preview,
@@ -483,7 +485,7 @@ impl Renderer {
                     continue;
                 }
             };
-            if matches!(slot, Slot::Prefetch(_)) {
+            if matches!(slot, Slot::Prefetch(_) | Slot::Precache(_)) {
                 continue;
             }
             if let Slot::ThumbQuick(id) = slot {

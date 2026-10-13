@@ -18,6 +18,7 @@ pub mod menubar;
 pub mod menus;
 pub mod merge;
 pub mod panels;
+pub mod precache;
 pub mod render;
 pub mod shortcuts;
 pub mod softpaint;
@@ -187,6 +188,8 @@ pub struct LightcraftApp {
     pub scan: Option<import::ScanTask>,
     /// A background export in progress.
     pub export: Option<export_task::ExportTask>,
+    /// Background thumbnail pre-generation (populates the disk cache for all catalog photos).
+    pub precache: Option<precache::Precache>,
     /// Background file-system work of other commands (Find Missing Photos, auto import…).
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
@@ -245,6 +248,7 @@ impl LightcraftApp {
             import: None,
             scan: None,
             export: None,
+            precache: None,
             tasks: Default::default(),
             last_export_result: None,
             hover_preview: None,
@@ -619,6 +623,31 @@ impl LightcraftApp {
         merge::poll(self, ctx);
         import::poll_scan(self, ctx);
         import::tick(self, ctx);
+        // Background thumbnail pre-generation: start when the catalog has photos and restart when
+        // the catalog changes (photos added, removed or a different library opened).
+        {
+            let rev = self.session.catalog.revision;
+            let need_restart = match &self.precache {
+                Some(pc) => pc.catalog_rev() != rev,
+                None => !self.session.catalog.is_empty(),
+            };
+            if need_restart {
+                let ids: Vec<lightcraft_catalog::PhotoId> = self.session.catalog.photos().map(|p| p.id).collect();
+                if ids.is_empty() {
+                    self.precache = None;
+                } else {
+                    self.precache = Some(precache::Precache::new(ids, rev));
+                }
+            }
+            if let Some(pc) = &mut self.precache
+                && !pc.finished()
+            {
+                pc.tick(&mut self.session, &mut self.renderer);
+                // Keep frames coming while there is precache work left (low frequency is fine:
+                // the render pool does the heavy lifting in the background).
+                ctx.request_repaint_after(std::time::Duration::from_millis(200));
+            }
+        }
         tasks::poll(self, ctx);
         self.preview_build_status(ctx);
         self.save_status(ctx);

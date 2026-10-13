@@ -49,6 +49,14 @@ impl PreviewCache {
         self.disk.as_ref()
     }
 
+    /// Check whether a thumbnail exists in the memory LRU or on disk (without decoding).
+    pub fn has(&self, key: Hash128) -> bool {
+        if self.mem.lock().unwrap_or_else(|e| e.into_inner()).get(&key).is_some() {
+            return true;
+        }
+        self.disk.as_ref().is_some_and(|d| d.contains(key))
+    }
+
     pub fn get(&self, key: Hash128) -> Option<Arc<Rgba8>> {
         self.get_at(self.generation(), key)
     }

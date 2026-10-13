@@ -63,6 +63,11 @@ impl DiskCache {
         self.dir.join(&hex[..2]).join(format!("{hex}.jpg"))
     }
 
+    /// Check whether a cached thumbnail exists on disk (without reading or decoding it).
+    pub fn contains(&self, key: Hash128) -> bool {
+        self.path(key).exists()
+    }
+
     pub fn get(&self, key: Hash128) -> Option<Rgba8> {
         let p = self.path(key);
         let Ok(bytes) = std::fs::read(&p) else {
