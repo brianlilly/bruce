@@ -338,12 +338,15 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         filter_pill(app, ui, canvas);
     }
     if app.ui.face_boxes {
-        match region_overlay(ui, &p, &map, &photo, d.orientation) {
+        match region_overlay(app, ui, &p, &map, &photo, d.orientation) {
             Some(RegionEdit::Remove(index)) => {
                 let _ = app.run("photo.removeRegion", json!({"id": id.0, "index": index}));
             }
             Some(RegionEdit::Resize(index, r)) => {
                 let _ = app.run("photo.setRegion", json!({"id": id.0, "index": index, "rect": {"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1}}));
+            }
+            Some(RegionEdit::Rename(index, name)) => {
+                let _ = app.run("photo.renameRegion", json!({"id": id.0, "index": index, "name": name}));
             }
             None => {}
         }
@@ -437,10 +440,12 @@ fn info_overlay(app: &LightcraftApp, p: &egui::Painter, canvas: Rect, photo: &li
 
 /// What the user did to a face box this frame.
 enum RegionEdit {
-    /// The × was clicked.
+    /// The x was clicked.
     Remove(usize),
     /// A handle drag ended: the region's new box (normalized, upright frame).
     Resize(usize, lightcraft_geom::Rect),
+    /// The name label was edited and committed: (region index, new name).
+    Rename(usize, String),
 }
 
 /// Handles of a box: (x, y) as fractions of its width and height, and the cursor they show.
@@ -456,12 +461,14 @@ const REGION_HANDLES: [(f32, f32, egui::CursorIcon); 8] = [
 ];
 
 /// Face/pet/focus regions read from XMP (MWG-RS), drawn as boxes over the photo. Hovering a box shows
-/// a × in its corner and eight resize handles. A drag previews the new box live and is reported once,
-/// on release (one undo step); the × reports the region to remove. Both are catalog-only edits:
-/// LightCraft doesn't write regions to XMP. Regions are stored on the upright (EXIF-oriented) photo;
-/// `orient` is the user's Rotate / Flip on top of it, which the loupe's normalized frame includes.
+/// a x in its corner and eight resize handles. Clicking the name label opens an inline text input
+/// to rename the face. A drag previews the new box live and is reported once, on release (one undo
+/// step); the x reports the region to remove. Both are catalog-only edits: LightCraft doesn't write
+/// regions to XMP. Regions are stored on the upright (EXIF-oriented) photo; `orient` is the user's
+/// Rotate / Flip on top of it, which the loupe's normalized frame includes.
 fn region_overlay(
-    ui: &egui::Ui,
+    app: &mut crate::LightcraftApp,
+    ui: &mut egui::Ui,
     p: &egui::Painter,
     map: &CanvasMap,
     photo: &lightcraft_catalog::Photo,
@@ -541,25 +548,101 @@ fn region_overlay(
                 edit = Some(RegionEdit::Remove(index));
             }
         }
-        let Some(name) = &r.name else { continue };
-        // the name in a dark label with a caret, centred above the box (below it when there is no room)
-        let g = p.layout_no_wrap(name.clone(), t.font(13.0), Color32::from_gray(225));
-        let (pad, caret) = (vec2(14.0, 7.0), 5.0);
-        let size = g.size() + pad * 2.0;
-        let above = rect.top() - caret - size.y >= clip.top();
-        let (top, tip, base) = if above {
-            (rect.top() - caret - size.y, rect.top() - 1.0, rect.top() - caret - 1.0)
-        } else {
-            (rect.bottom() + caret, rect.bottom() + 1.0, rect.bottom() + caret + 1.0)
-        };
-        let left = (rect.center().x - size.x / 2.0).clamp(clip.left(), (clip.right() - size.x).max(clip.left()));
-        let label = Rect::from_min_size(pos2(left, top), size);
-        let fill = Color32::from_rgba_unmultiplied(56, 56, 56, 235);
-        p.rect_filled(label, 3.0, fill);
-        p.rect_stroke(label, 3.0, Stroke::new(1.0, Color32::from_black_alpha(160)), StrokeKind::Inside);
-        let cx = rect.center().x.clamp(label.left() + caret + 4.0, label.right() - caret - 4.0);
-        p.add(egui::Shape::convex_polygon(vec![pos2(cx - caret, base), pos2(cx + caret, base), pos2(cx, tip)], fill, Stroke::NONE));
-        p.galley(label.min + pad, g, Color32::from_gray(225));
+        let is_naming = app.ui.naming_region.as_ref().is_some_and(|(i, _)| *i == index);
+
+        if is_naming {
+            // --- Inline rename: TextEdit above (or below) the face box ---
+            let input_id = egui::Id::new(("region-name-input", index));
+            let input_w: f32 = 160.0;
+            let input_h: f32 = 24.0;
+            let (pad_y, caret_h) = (4.0_f32, 5.0_f32);
+            let above = rect.top() - caret_h - input_h - pad_y * 2.0 >= clip.top();
+            let top = if above { rect.top() - caret_h - input_h - pad_y } else { rect.bottom() + caret_h + pad_y };
+            let left = (rect.center().x - input_w / 2.0).clamp(clip.left() + 2.0, (clip.right() - input_w - 2.0).max(clip.left()));
+            let input_rect = Rect::from_min_size(pos2(left, top), vec2(input_w, input_h));
+
+            let mut text = app.ui.naming_region.as_ref().map(|(_, t)| t.clone()).unwrap_or_default();
+            let te = egui::TextEdit::singleline(&mut text)
+                .id(input_id)
+                .hint_text("Type a name…")
+                .desired_width(input_w - 8.0)
+                .font(t.font(13.0));
+            let te_resp = ui.put(input_rect, te);
+            register(ui.ctx(), format!("field:regionName{index}"), te_resp.rect);
+
+            // Focus on first frame
+            if te_resp.gained_focus() || !te_resp.has_focus() {
+                te_resp.request_focus();
+            }
+
+            // Update the stored text
+            if let Some((_, ref mut stored)) = app.ui.naming_region {
+                *stored = text.clone();
+            }
+
+            // Enter → commit the rename
+            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if enter {
+                let name = text.trim().to_string();
+                app.ui.naming_region = None;
+                edit = Some(RegionEdit::Rename(index, name));
+            }
+
+            // Escape → cancel
+            let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+            if esc {
+                app.ui.naming_region = None;
+            }
+        } else if let Some(name) = &r.name {
+            // --- Named face: dark label with caret, clickable to rename ---
+            let g = p.layout_no_wrap(name.clone(), t.font(13.0), Color32::from_gray(225));
+            let (pad, caret) = (vec2(14.0, 7.0), 5.0);
+            let size = g.size() + pad * 2.0;
+            let above = rect.top() - caret - size.y >= clip.top();
+            let (top, tip, base) = if above {
+                (rect.top() - caret - size.y, rect.top() - 1.0, rect.top() - caret - 1.0)
+            } else {
+                (rect.bottom() + caret, rect.bottom() + 1.0, rect.bottom() + caret + 1.0)
+            };
+            let left = (rect.center().x - size.x / 2.0).clamp(clip.left(), (clip.right() - size.x).max(clip.left()));
+            let label = Rect::from_min_size(pos2(left, top), size);
+            let fill = Color32::from_rgba_unmultiplied(56, 56, 56, 235);
+            p.rect_filled(label, 3.0, fill);
+            p.rect_stroke(label, 3.0, Stroke::new(1.0, Color32::from_black_alpha(160)), StrokeKind::Inside);
+            let cx = rect.center().x.clamp(label.left() + caret + 4.0, label.right() - caret - 4.0);
+            p.add(egui::Shape::convex_polygon(vec![pos2(cx - caret, base), pos2(cx + caret, base), pos2(cx, tip)], fill, Stroke::NONE));
+            p.galley(label.min + pad, g, Color32::from_gray(225));
+
+            let resp = ui.interact(label, egui::Id::new(("region-name-click", index)), Sense::click());
+            if resp.on_hover_text("Click to rename").clicked() {
+                app.ui.naming_region = Some((index, name.clone()));
+            }
+        } else if dragging.is_none() && live.is_none() && pointer.is_some_and(|h| rect.expand(3.0).contains(h)) {
+            // --- Unnamed face, hovered: show a "Click to name" hint ---
+            let hint = "Click to name";
+            let g = p.layout_no_wrap(hint.to_string(), t.font(12.0), Color32::from_gray(180));
+            let (pad, caret) = (vec2(10.0, 5.0), 5.0);
+            let size = g.size() + pad * 2.0;
+            let above = rect.top() - caret - size.y >= clip.top();
+            let (top, tip, base) = if above {
+                (rect.top() - caret - size.y, rect.top() - 1.0, rect.top() - caret - 1.0)
+            } else {
+                (rect.bottom() + caret, rect.bottom() + 1.0, rect.bottom() + caret + 1.0)
+            };
+            let left = (rect.center().x - size.x / 2.0).clamp(clip.left(), (clip.right() - size.x).max(clip.left()));
+            let label = Rect::from_min_size(pos2(left, top), size);
+            let fill = Color32::from_rgba_unmultiplied(56, 56, 56, 200);
+            p.rect_filled(label, 3.0, fill);
+            p.rect_stroke(label, 3.0, Stroke::new(1.0, Color32::from_black_alpha(120)), StrokeKind::Inside);
+            let cx = rect.center().x.clamp(label.left() + caret + 4.0, label.right() - caret - 4.0);
+            p.add(egui::Shape::convex_polygon(vec![pos2(cx - caret, base), pos2(cx + caret, base), pos2(cx, tip)], fill, Stroke::NONE));
+            p.galley(label.min + pad, g, Color32::from_gray(180));
+
+            let resp = ui.interact(label, egui::Id::new(("region-name-click", index)), Sense::click());
+            if resp.clicked() {
+                app.ui.naming_region = Some((index, String::new()));
+            }
+        }
     }
     edit
 }

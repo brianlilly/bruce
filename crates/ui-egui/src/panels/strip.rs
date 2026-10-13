@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::LightcraftApp;
 use crate::icons::Icon;
-use crate::state::RightPanel;
+use crate::state::{RightPanel, ViewMode};
 use crate::theme::Tokens;
 use crate::widgets::icon_button;
 
@@ -22,15 +22,20 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         )
         .show(ui, |ui| {
             let has_photo = app.session.active().is_some();
+            let in_detail = app.ui.view == ViewMode::Detail;
             ui.vertical_centered(|ui| {
                 ui.spacing_mut().item_spacing.y = 6.0;
                 let sz = vec2(t.strip_w, 40.0);
-                // Bruce: gallery-focused strip — edit tools are behind the `develop` feature.
+                // Presets stays behind the `develop` feature flag.
                 #[cfg(feature = "develop")]
                 {
                     if icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets (Shift+P)").clicked() {
                         let _ = app.run("panel.presets", json!({}));
                     }
+                }
+                // Edit tools: always visible in Detail view, otherwise behind `develop`.
+                let show_edit_tools = in_detail || cfg!(feature = "develop");
+                if show_edit_tools {
                     for (id, icon, panel, tip) in [
                         ("edit", Icon::Sliders, RightPanel::Edit, "Edit (E)"),
                         ("crop", Icon::Crop, RightPanel::Crop, "Crop & Rotate (C)"),
@@ -78,7 +83,6 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         });
 }
 
-#[cfg(feature = "develop")]
 fn separator(ui: &mut egui::Ui, t: &Tokens) {
     let (r, _) = ui.allocate_exact_size(vec2(t.strip_w - 16.0, 1.0), egui::Sense::hover());
     ui.painter().rect_filled(r, 0.0, t.button_border.gamma_multiply(0.7));

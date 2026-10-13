@@ -387,6 +387,9 @@ pub struct UiState {
     /// An unnamed face cluster being named: (cluster_id, name text being edited).
     #[serde(skip)]
     pub naming_cluster: Option<(usize, String)>,
+    /// A face region being renamed in the Detail view: (region_index, name text being edited).
+    #[serde(skip)]
+    pub naming_region: Option<(usize, String)>,
 }
 
 /// Settings group ids (`SettingsGroup` serde names) a new preset includes by default: everything
@@ -631,6 +634,7 @@ impl Default for UiState {
             status: String::new(),
             dialog: None,
             naming_cluster: None,
+            naming_region: None,
         }
     }
 }

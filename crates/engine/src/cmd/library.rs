@@ -575,6 +575,32 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"rect": {"x0": x0, "y0": y0, "x1": x1, "y1": y1}}))
             }
         ),
+        cmd!(
+            "photo.renameRegion",
+            "Rename Face",
+            [],
+            None,
+            "{id?, index, name} — set or change the name on one face / pet region; an empty name clears it. Undoable. Like photo.removeRegion it never rewrites the XMP sidecar",
+            always,
+            |s, p| {
+                const C: &str = "photo.renameRegion";
+                let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or_else(|| s.active()).ok_or_else(|| bad(C, "no photo"))?;
+                let index = p
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .and_then(|i| usize::try_from(i).ok())
+                    .ok_or_else(|| bad(C, "missing or invalid `index`"))?;
+                let name = p.get("name").and_then(Value::as_str).unwrap_or("");
+                let mut meta = s.catalog.photo(id).ok_or_else(|| bad(C, "no such photo"))?.meta.clone();
+                let region = meta.regions.get_mut(index).ok_or_else(|| bad(C, "no such region"))?;
+                let old = region.name.clone();
+                let new_name = if name.trim().is_empty() { None } else { Some(name.trim().to_string()) };
+                region.name = new_name.clone();
+                s.commit("Rename Face", Op::SetMeta { id, meta: Box::new(meta) })?;
+                s.skip_auto_write = true;
+                Ok(json!({"old": old, "name": new_name}))
+            }
+        ),
         // ---- delete / restore
         cmd!("photo.delete", "Delete Photo", ["Photo"], Some("Delete"), "{ids?} — moves to Recently Deleted", has_selection, |s, p| {
             let v = for_targets(s, p, "Delete", |id| Some(Op::SetDeleted { id, deleted: true }))?;
