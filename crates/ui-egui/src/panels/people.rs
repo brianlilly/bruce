@@ -39,9 +39,30 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let chips = lightcraft_engine::filter_chips(&app.session.filter, &app.session.catalog);
     super::chips::show(app, ui, &chips);
 
+    // --- "Scan for Faces" button ---
+    let can_scan = app.session.face_detector.installed() && app.session.face_embedder.installed();
+    if can_scan {
+        let (btn_rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::hover());
+        let btn_size = vec2(140.0, 28.0);
+        let btn_min = pos2(btn_rect.right() - PAD - btn_size.x, btn_rect.center().y - btn_size.y / 2.0);
+        let btn = Rect::from_min_size(btn_min, btn_size);
+        let btn_resp = ui.interact(btn, egui::Id::new("scan-for-faces-btn"), Sense::click());
+        register(ui.ctx(), "button:scanForFaces".to_string(), btn);
+        let bg = if btn_resp.hovered() { t.accent } else { t.accent.gamma_multiply(0.85) };
+        ui.painter().rect_filled(btn, 4.0, bg);
+        ui.painter().text(btn.center(), Align2::CENTER_CENTER, "Scan for Faces", t.semibold(13.0), Color32::WHITE);
+        if btn_resp.on_hover_text("Detect, embed, and cluster faces in all photos").clicked() {
+            let _ = app.run("face.scanAll", json!({}));
+        }
+    }
+
     if people.is_empty() && clusters.is_empty() {
         let (title, body) = if chips.is_empty() {
-            ("No people yet", "Detect and embed faces, then come back to name them. Face names from XMP also show up here.")
+            if can_scan {
+                ("No people yet", "Click \"Scan for Faces\" above to detect and cluster faces. Face names from XMP also show up here.")
+            } else {
+                ("No people yet", "Install face detection and embedding models, then scan for faces. Face names from XMP also show up here.")
+            }
         } else {
             ("No people in these photos", "Remove a filter above, or choose Clear all")
         };
