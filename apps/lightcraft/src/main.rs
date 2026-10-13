@@ -272,14 +272,23 @@ fn services() -> Services {
             let status = if cfg!(target_os = "macos") {
                 std::process::Command::new("open").args(["-R", path]).status()
             } else if cfg!(target_os = "windows") {
-                std::process::Command::new("explorer").arg(format!("/select,{path}")).status()
+                reveal_windows(path)
             } else {
-                let dir = std::path::Path::new(path).parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_else(|| ".".into());
+                let dir = std::path::Path::new(path)
+                    .parent()
+                    .map(|d| d.to_string_lossy().to_string())
+                    .unwrap_or_else(|| ".".into());
                 std::process::Command::new("xdg-open").arg(dir).status()
             };
             status
                 .map_err(|e| e.to_string())
-                .and_then(|s| if s.success() || cfg!(target_os = "windows") { Ok(()) } else { Err(format!("reveal failed: {s}")) })
+                .and_then(|s| {
+                    if s.success() || cfg!(target_os = "windows") {
+                        Ok(())
+                    } else {
+                        Err(format!("reveal failed: {s}"))
+                    }
+                })
         })),
         pick_files: Some(Box::new(|| {
             rfd::FileDialog::new()
@@ -439,6 +448,30 @@ fn install_log() {
     if log::set_logger(LOGGER.get_or_init(|| StderrLog(level))).is_ok() {
         log::set_max_level(level);
     }
+}
+
+/// Reveal a file in Windows Explorer.
+///
+/// `explorer /select,<path>` requires the `/select,` prefix to sit outside any
+/// quotes on the command line, but `Command::arg()` quotes the whole argument
+/// when the path contains spaces, making Explorer ignore the flag and open the
+/// wrong folder. `raw_arg` emits the exact command-line fragment we need.
+#[cfg(target_os = "windows")]
+fn reveal_windows(path: &str) -> std::io::Result<std::process::ExitStatus> {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("explorer")
+        .raw_arg(format!("/select,\"{}\"", path))
+        .status()
+}
+
+/// Fallback so the code compiles on non-Windows (the call site is behind
+/// `cfg!(target_os = "windows")` which is false, so this is never reached).
+#[cfg(not(target_os = "windows"))]
+fn reveal_windows(_path: &str) -> std::io::Result<std::process::ExitStatus> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "reveal_windows called on non-Windows",
+    ))
 }
 
 fn main() -> eframe::Result {
