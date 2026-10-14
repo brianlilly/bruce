@@ -133,6 +133,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             t.icon
         };
         paint(ui.painter(), Rect::from_center_size(r.center(), vec2(14.0, 14.0)), if filled { Icon::StarFilled } else { Icon::Star }, c);
+        let tip = if f.rating == i {
+            format!("{i} star{} (click to clear)", if i == 1 { "" } else { "s" })
+        } else {
+            format!("{i} star{}", if i == 1 { "" } else { "s" })
+        };
+        let resp = resp.on_hover_text(tip);
         if resp.clicked() {
             filter(app, json!({"rating": if f.rating == i { 0 } else { i }}));
         }

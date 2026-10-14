@@ -139,6 +139,7 @@ fn centre(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect, from: f32, to:
         register(ui.ctx(), "icon:copyGear", gear_r);
         ui.painter().rect_filled(gear_r, 15.0, if gresp.hovered() { t.hover } else { t.canvas });
         paint(ui.painter(), gear_r.shrink(7.0), Icon::Gear, t.icon);
+        let gresp = gresp.on_hover_text(crate::i18n::tr("Copy/Paste Settings Options"));
         if gresp.clicked() {
             let _ = app.run("dialog.copySettings", json!({}));
         }
@@ -239,6 +240,7 @@ fn right_side(app: &mut LightcraftApp, ui: &mut egui::Ui, full: Rect) -> f32 {
         let f = (app.ui.thumb_size - 90.0) / (480.0 - 90.0);
         let x = r.left() + f * r.width();
         p.rect_filled(Rect::from_center_size(pos2(x, y), vec2(3.0, 14.0)), 1.0, t.thumb_hover);
+        let resp = resp.on_hover_text(crate::i18n::tr("Thumbnail Size"));
         if let Some(pp) = resp.interact_pointer_pos()
             && (resp.dragged() || resp.clicked())
         {
