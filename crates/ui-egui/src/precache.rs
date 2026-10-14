@@ -37,14 +37,7 @@ impl Precache {
     /// Start (or restart) precaching for the current catalog.
     pub fn new(ids: Vec<PhotoId>, catalog_rev: u64) -> Self {
         let total = ids.len();
-        Self {
-            remaining: ids,
-            total,
-            cached: 0,
-            submitted: 0,
-            catalog_rev,
-            bucket: thumb_bucket(PRECACHE_EDGE),
-        }
+        Self { remaining: ids, total, cached: 0, submitted: 0, catalog_rev, bucket: thumb_bucket(PRECACHE_EDGE) }
     }
 
     /// How many photos have been processed (cached or submitted).

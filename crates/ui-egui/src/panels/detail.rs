@@ -562,11 +562,7 @@ fn region_overlay(
             let input_rect = Rect::from_min_size(pos2(left, top), vec2(input_w, input_h));
 
             let mut text = app.ui.naming_region.as_ref().map(|(_, t)| t.clone()).unwrap_or_default();
-            let te = egui::TextEdit::singleline(&mut text)
-                .id(input_id)
-                .hint_text("Type a name…")
-                .desired_width(input_w - 8.0)
-                .font(t.font(13.0));
+            let te = egui::TextEdit::singleline(&mut text).id(input_id).hint_text("Type a name…").desired_width(input_w - 8.0).font(t.font(13.0));
             let te_resp = ui.put(input_rect, te);
             register(ui.ctx(), format!("field:regionName{index}"), te_resp.rect);
 

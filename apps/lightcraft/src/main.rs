@@ -274,21 +274,12 @@ fn services() -> Services {
             } else if cfg!(target_os = "windows") {
                 reveal_windows(path)
             } else {
-                let dir = std::path::Path::new(path)
-                    .parent()
-                    .map(|d| d.to_string_lossy().to_string())
-                    .unwrap_or_else(|| ".".into());
+                let dir = std::path::Path::new(path).parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_else(|| ".".into());
                 std::process::Command::new("xdg-open").arg(dir).status()
             };
             status
                 .map_err(|e| e.to_string())
-                .and_then(|s| {
-                    if s.success() || cfg!(target_os = "windows") {
-                        Ok(())
-                    } else {
-                        Err(format!("reveal failed: {s}"))
-                    }
-                })
+                .and_then(|s| if s.success() || cfg!(target_os = "windows") { Ok(()) } else { Err(format!("reveal failed: {s}")) })
         })),
         pick_files: Some(Box::new(|| {
             rfd::FileDialog::new()
@@ -459,19 +450,14 @@ fn install_log() {
 #[cfg(target_os = "windows")]
 fn reveal_windows(path: &str) -> std::io::Result<std::process::ExitStatus> {
     use std::os::windows::process::CommandExt;
-    std::process::Command::new("explorer")
-        .raw_arg(format!("/select,\"{}\"", path))
-        .status()
+    std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", path)).status()
 }
 
 /// Fallback so the code compiles on non-Windows (the call site is behind
 /// `cfg!(target_os = "windows")` which is false, so this is never reached).
 #[cfg(not(target_os = "windows"))]
 fn reveal_windows(_path: &str) -> std::io::Result<std::process::ExitStatus> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "reveal_windows called on non-Windows",
-    ))
+    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "reveal_windows called on non-Windows"))
 }
 
 fn main() -> eframe::Result {

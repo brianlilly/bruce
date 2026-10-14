@@ -27,11 +27,7 @@ fn detect_and_embed_installed(s: &Session) -> std::result::Result<(), String> {
 
 /// Collect all photo ids that have no face regions yet.
 fn photos_without_faces(s: &Session) -> Vec<PhotoId> {
-    s.catalog
-        .photos()
-        .filter(|photo| !photo.meta.regions.iter().any(|r| matches!(r.kind, RegionKind::Face)))
-        .map(|photo| photo.id)
-        .collect()
+    s.catalog.photos().filter(|photo| !photo.meta.regions.iter().any(|r| matches!(r.kind, RegionKind::Face))).map(|photo| photo.id).collect()
 }
 
 /// Collect all (photo, region_index) pairs for face regions in the catalog.
@@ -152,11 +148,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 let eps = f64_or(p, "eps", 0.45);
                 let min_samples = p.get("minSamples").and_then(Value::as_u64).unwrap_or(2);
                 let cluster_result = s.execute("face.cluster", &json!({"eps": eps, "minSamples": min_samples}))?;
-                let num_clusters = cluster_result
-                    .get("clusters")
-                    .and_then(Value::as_array)
-                    .map(|a| a.len() as u64)
-                    .unwrap_or(0);
+                let num_clusters = cluster_result.get("clusters").and_then(Value::as_array).map(|a| a.len() as u64).unwrap_or(0);
 
                 Ok(json!({
                     "detected": detected,
@@ -295,7 +287,7 @@ pub fn specs() -> Vec<CommandSpec> {
 #[cfg(test)]
 mod tests {
     use lightcraft_catalog::{Photo, Source};
-    use lightcraft_meta::{Region, RegionKind, Rect};
+    use lightcraft_meta::{Rect, Region, RegionKind};
 
     use super::*;
     use crate::Session;
@@ -310,12 +302,7 @@ mod tests {
 
         // Photo 2: already has a face region.
         let mut p2 = Photo::new(PhotoId(2), Source::File { path: "test/photo2.jpg".into() }, "photo2.jpg", "JPEG", 640, 480, "2026-01-01");
-        p2.meta.regions.push(Region {
-            rect: Rect::from_xywh(0.1, 0.2, 0.3, 0.4),
-            kind: RegionKind::Face,
-            name: None,
-            description: None,
-        });
+        p2.meta.regions.push(Region { rect: Rect::from_xywh(0.1, 0.2, 0.3, 0.4), kind: RegionKind::Face, name: None, description: None });
         s.catalog.apply(lightcraft_catalog::Op::AddPhoto { photo: Box::new(p2) }).expect("add photo 2");
 
         // Photo 3: no face regions.
