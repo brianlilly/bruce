@@ -624,11 +624,17 @@ impl LightcraftApp {
         import::poll_scan(self, ctx);
         import::tick(self, ctx);
         // Background thumbnail pre-generation: start when the catalog has photos and restart when
-        // the catalog changes (photos added, removed or a different library opened).
+        // the catalog changes (photos added, removed or a different library opened) or when the
+        // grid thumbnail size changes (a different bucket means different cache keys).
         {
             let rev = self.session.catalog.revision;
+            // Compute the thumbnail long edge the grid will request: same formula as
+            // panels::grid::thumb_px (cell points × pixels-per-point, rounded up to a bucket).
+            let ppp = ctx.pixels_per_point();
+            let thumb_long_edge = (self.ui.thumb_size * ppp).ceil() as usize;
+            let thumb_bucket = lightcraft_engine::media::thumb_bucket(thumb_long_edge);
             let need_restart = match &self.precache {
-                Some(pc) => pc.catalog_rev() != rev,
+                Some(pc) => pc.catalog_rev() != rev || pc.bucket() != thumb_bucket,
                 None => !self.session.catalog.is_empty(),
             };
             if need_restart {
@@ -636,7 +642,7 @@ impl LightcraftApp {
                 if ids.is_empty() {
                     self.precache = None;
                 } else {
-                    self.precache = Some(precache::Precache::new(ids, rev));
+                    self.precache = Some(precache::Precache::new(ids, rev, thumb_long_edge));
                 }
             }
             if let Some(pc) = &mut self.precache
