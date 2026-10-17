@@ -334,6 +334,11 @@ impl Catalog {
         v.into_iter().map(|p| p.id).collect()
     }
 
+    /// Number of photos matching `filter` (no sort, no allocation beyond the count).
+    pub fn query_count(&self, filter: &Filter) -> usize {
+        self.photos().filter(|p| filter.matches(p.as_ref(), self)).count()
+    }
+
     /// Year → month → day counts for the "By Date" section (newest first).
     pub fn date_groups(&self) -> Vec<DateGroup> {
         use std::collections::BTreeMap;

@@ -692,7 +692,7 @@ impl Session {
                 f.folder = Some(b.path);
                 f.subfolders = b.subfolders;
             }
-            let n = self.catalog.query(&f, &self.sort).len();
+            let n = self.catalog.query_count(&f);
             self.total = Some((key, n));
         }
         self.total.as_ref().map(|t| t.1)

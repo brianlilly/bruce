@@ -192,6 +192,8 @@ pub struct LightcraftApp {
     pub export: Option<export_task::ExportTask>,
     /// Background thumbnail pre-generation (populates the disk cache for all catalog photos).
     pub precache: Option<precache::Precache>,
+    /// Defer precache init by N frames after a session swap so the grid renders first.
+    precache_defer: u32,
     /// Background file-system work of other commands (Find Missing Photos, auto import…).
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
@@ -269,6 +271,7 @@ impl LightcraftApp {
             scan: None,
             export: None,
             precache: None,
+            precache_defer: 0,
             tasks: Default::default(),
             last_export_result: None,
             hover_preview: None,
@@ -622,6 +625,9 @@ impl LightcraftApp {
                     let pending_import = result.pending_import;
                     self.session = result.session;
                     self.library_loading = None;
+                    // Let the grid render for a couple of frames before starting precache init
+                    // (which does an O(n) collect of all photo IDs).
+                    self.precache_defer = 2;
                     // The availability worker was started on the empty session; start it on the
                     // real one so "is the original there?" checks work (grid overlay, Info panel).
                     let repaint = ctx.clone();
@@ -688,7 +694,15 @@ impl LightcraftApp {
         // Background thumbnail pre-generation: start when the catalog has photos and restart when
         // the catalog changes (photos added, removed or a different library opened) or when the
         // grid thumbnail size changes (a different bucket means different cache keys).
-        {
+        //
+        // On the first frame after a library loads, skip the precache init so the grid can render
+        // without competing for CPU.  `precache_defer` counts down from 2 frames after a session
+        // swap before precache is allowed to start.
+        if self.precache_defer > 0 {
+            self.precache_defer -= 1;
+            ctx.request_repaint();
+        }
+        if self.precache_defer == 0 {
             let rev = self.session.catalog.revision;
             // Compute the thumbnail long edge the grid will request: same formula as
             // panels::grid::thumb_px (cell points × pixels-per-point, rounded up to a bucket).

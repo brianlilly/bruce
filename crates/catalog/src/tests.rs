@@ -454,3 +454,23 @@ fn random_sort_has_no_date_headers() {
     let ids = many(&mut c, 5);
     assert!(c.date_runs(&ids, SortKey::Random, GroupBy::Day).is_empty());
 }
+
+#[test]
+fn query_count_matches_query_len() {
+    let mut c = Catalog::new();
+    photo(&mut c, "a.jpg", "2026-04-01T10:00:00");
+    photo(&mut c, "b.jpg", "2026-05-01T10:00:00");
+    photo(&mut c, "c.jpg", "2026-06-01T10:00:00");
+    c.apply(Op::SetRating { id: PhotoId(1), rating: 3 }).unwrap();
+
+    let f = query::Filter::default();
+    let s = query::Sort::default();
+    assert_eq!(c.query_count(&f), c.query(&f, &s).len());
+
+    let rated = query::Filter { rating: 3, ..Default::default() };
+    assert_eq!(c.query_count(&rated), c.query(&rated, &s).len());
+    assert_eq!(c.query_count(&rated), 1);
+
+    let empty = query::Filter { rating: 5, ..Default::default() };
+    assert_eq!(c.query_count(&empty), 0);
+}
