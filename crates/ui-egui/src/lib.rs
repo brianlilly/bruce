@@ -30,6 +30,8 @@ pub mod widgets;
 #[cfg(test)]
 mod tests_curve;
 #[cfg(test)]
+mod tests_deferred_load;
+#[cfg(test)]
 mod tests_grid;
 #[cfg(test)]
 mod tests_library_problem;
@@ -206,6 +208,24 @@ pub struct LightcraftApp {
     /// The library failed to open at launch: the blocking window, then the temporary-session
     /// banner (issue #100). Cleared once a library opens.
     pub library_problem: Option<panels::library_problem::LibraryProblem>,
+    /// The library is loading on a background thread: the window is shown immediately and the
+    /// session is swapped once it's ready (issue #137).
+    pub library_loading: Option<LibraryLoading>,
+}
+
+/// Deferred library loading: the heavy catalog I/O happens on a background thread so the window
+/// appears immediately, even for libraries with >100 k photos.
+pub struct LibraryLoading {
+    rx: Receiver<LibraryLoadResult>,
+}
+
+/// What the background thread sends back.
+pub struct LibraryLoadResult {
+    pub session: Session,
+    pub problem: Option<panels::library_problem::LibraryProblem>,
+    pub elapsed_ms: f64,
+    /// Files from the command line, imported once the library is ready.
+    pub pending_import: Vec<String>,
 }
 
 impl LightcraftApp {
@@ -256,7 +276,16 @@ impl LightcraftApp {
             gpu_applied: None,
             memory_applied: None,
             library_problem: None,
+            library_loading: None,
         }
+    }
+
+    /// Set the deferred library loading receiver. The background thread will send a
+    /// [`LibraryLoadResult`] when the catalog is ready; until then the window shows a loading
+    /// overlay and the session is empty.
+    pub fn with_deferred_library(mut self, rx: Receiver<LibraryLoadResult>) -> Self {
+        self.library_loading = Some(LibraryLoading { rx });
+        self
     }
 
     pub fn with_control(mut self, rx: Receiver<ControlRequest>) -> Self {
@@ -583,6 +612,39 @@ impl LightcraftApp {
     }
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
+        // Deferred library loading (issue #137): poll the background thread. When the loaded
+        // session arrives, swap it in and configure model dirs.
+        if let Some(loading) = &self.library_loading {
+            match loading.rx.try_recv() {
+                Ok(result) => {
+                    log::info!("library loaded in the background ({:.1} ms)", result.elapsed_ms);
+                    let problem = result.problem;
+                    let pending_import = result.pending_import;
+                    self.session = result.session;
+                    self.library_loading = None;
+                    // The availability worker was started on the empty session; start it on the
+                    // real one so "is the original there?" checks work (grid overlay, Info panel).
+                    let repaint = ctx.clone();
+                    self.session.media.availability.run_in_background(std::sync::Arc::new(move || repaint.request_repaint()));
+                    if let Some(mut p) = problem {
+                        p.pending_import = pending_import;
+                        self.library_problem = Some(p);
+                    } else if !pending_import.is_empty() {
+                        let _ = self.run("library.import", serde_json::json!({"paths": pending_import}));
+                        self.ui.view = state::ViewMode::PhotoGrid;
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // still loading: request a repaint so we poll again
+                    ctx.request_repaint_after(std::time::Duration::from_millis(50));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // the background thread panicked or was dropped: the session stays empty
+                    log::error!("library loading thread terminated unexpectedly");
+                    self.library_loading = None;
+                }
+            }
+        }
         if !self.styled {
             theme::install_fonts(ctx);
             theme::apply(ctx);
@@ -812,6 +874,7 @@ impl LightcraftApp {
             panels::notices::show(self, &ctx);
             panels::dialogs::show(self, &ctx);
             panels::library_problem::show(self, &ctx);
+            loading_overlay(self, &ctx);
             panels::toast(self, &ctx);
             self.widgets = widgets::take_registry(&ctx);
             self.end_frame(t0);
@@ -851,6 +914,7 @@ impl LightcraftApp {
         panels::notices::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
+        loading_overlay(self, &ctx);
         import::progress(self, &ctx);
         import::scan_progress(self, &ctx);
         export_task::poll(self, &ctx);
@@ -859,6 +923,31 @@ impl LightcraftApp {
         self.widgets = widgets::take_registry(&ctx);
         self.end_frame(t0);
     }
+}
+
+/// Full-screen loading overlay while the library loads on a background thread (issue #137).
+fn loading_overlay(app: &LightcraftApp, ctx: &egui::Context) {
+    if app.library_loading.is_none() {
+        return;
+    }
+    let t = theme::Tokens::get(ctx);
+    let screen = ctx.content_rect();
+    egui::Area::new(egui::Id::new("library-loading-dim"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(screen.min)
+        .interactable(false)
+        .show(ctx, |ui| {
+            ui.allocate_rect(screen, egui::Sense::hover());
+            ui.painter().rect_filled(screen, 0.0, egui::Color32::from_black_alpha(180));
+            let center = screen.center();
+            ui.painter().text(
+                center,
+                egui::Align2::CENTER_CENTER,
+                i18n::tr("Opening library…"),
+                egui::FontId::proportional(18.0),
+                t.text,
+            );
+        });
 }
 
 /// How long a screenshot waits for in-flight renders.

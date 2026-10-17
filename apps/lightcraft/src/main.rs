@@ -525,23 +525,10 @@ fn main() -> eframe::Result {
         "Bruce",
         options,
         Box::new(move |cc| {
-            let (mut session, problem) = open_session(in_memory, library_dir, seed_demo && files.is_empty());
-            // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or BRUCE_SAM3_DIR
-            // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
-            session.segmenter.dir =
-                std::env::var_os("BRUCE_SAM3_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("sam3")));
-            // the user's own download locations, one base URL per line (LIGHTCRAFT_SAM3_MIRRORS too)
-            session.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
-            // Face detection: the SCRFD-500M weights in <config>/models/scrfd, or BRUCE_FACE_DIR
-            // (optional: without it, face detection returns a "not installed" error)
-            session.face_detector.dir =
-                std::env::var_os("BRUCE_FACE_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("scrfd")));
-            session.face_detector.background = true;
-            // Face embedding: AdaFace IResNet-18 weights in <config>/models/adaface, or BRUCE_EMBED_DIR
-            session.face_embedder.dir =
-                std::env::var_os("BRUCE_EMBED_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("adaface")));
-            session.face_embedder.background = true;
-            let mut app = LightcraftApp::new(session, services());
+            // Start with an empty session so the window appears immediately: the heavy catalog I/O
+            // runs on a background thread and the session is swapped in once it's ready (issue #137).
+            let empty_session = Session::new().with_fs().with_system_clock();
+            let mut app = LightcraftApp::new(empty_session, services());
             if let Some(ui) = prefs {
                 app.ui = ui;
             }
@@ -564,14 +551,42 @@ fn main() -> eframe::Result {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
                 app = app.with_control(rx);
             }
-            if let Some(mut p) = problem {
-                // imported once the user has chosen where (into the library, or the temporary session)
-                p.pending_import = files;
-                app.library_problem = Some(p);
-            } else if !files.is_empty() {
-                let _ = app.run("library.import", serde_json::json!({"paths": files}));
-                app.ui.view = lightcraft_ui_egui::state::ViewMode::PhotoGrid;
-            }
+            // Spawn the background thread for library loading. Model dirs are configured on the
+            // session inside the thread after open_session returns (they set paths, not load models).
+            let (tx, rx) = std::sync::mpsc::channel();
+            let bg_ctx = cc.egui_ctx.clone();
+            std::thread::Builder::new()
+                .name("library-open".into())
+                .spawn(move || {
+                    let t0 = std::time::Instant::now();
+                    let no_files = files.is_empty();
+                    let (mut session, problem) = open_session(in_memory, library_dir, seed_demo && no_files);
+                    // AI masks: the SAM 3 checkpoint in <config>/models/sam3, or BRUCE_SAM3_DIR
+                    session.segmenter.dir = std::env::var_os("BRUCE_SAM3_DIR")
+                        .map(std::path::PathBuf::from)
+                        .or_else(|| config_dir().map(|d| d.join("models").join("sam3")));
+                    session.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
+                    // Face detection: SCRFD-500M weights
+                    session.face_detector.dir = std::env::var_os("BRUCE_FACE_DIR")
+                        .map(std::path::PathBuf::from)
+                        .or_else(|| config_dir().map(|d| d.join("models").join("scrfd")));
+                    session.face_detector.background = true;
+                    // Face embedding: AdaFace IResNet-18 weights
+                    session.face_embedder.dir = std::env::var_os("BRUCE_EMBED_DIR")
+                        .map(std::path::PathBuf::from)
+                        .or_else(|| config_dir().map(|d| d.join("models").join("adaface")));
+                    session.face_embedder.background = true;
+                    let result = lightcraft_ui_egui::LibraryLoadResult {
+                        elapsed_ms: t0.elapsed().as_secs_f64() * 1000.0,
+                        session,
+                        problem,
+                        pending_import: files,
+                    };
+                    let _ = tx.send(result);
+                    bg_ctx.request_repaint();
+                })
+                .ok();
+            app = app.with_deferred_library(rx);
             // native menu bar generated from the command registry (macOS; elsewhere the menus are
             // drawn in the window's top bar). BRUCE_NO_NATIVE_MENU=1 keeps the in-window menus.
             #[cfg(target_os = "macos")]
