@@ -81,6 +81,72 @@ fn deferred_library_shows_problem_on_failure() {
     assert!(has(&h, "button:libraryRetry"));
 }
 
+/// After a successful deferred load, caches warm up over several frames while the loading overlay
+/// stays visible.  Only once warmup finishes does the overlay disappear and panels render.
+#[test]
+fn deferred_library_warms_caches_before_showing_ui() {
+    let dir = std::env::temp_dir().join(format!("lc-ui-warmup-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let lib = dir.join("lib");
+    std::fs::create_dir_all(&lib).ok();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app = LightcraftApp::new(lightcraft_engine::Session::new().with_fs(), Services::default());
+    let app = app.with_deferred_library(rx);
+    let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+    h.step();
+
+    // Simulate the background thread completing
+    let mut session = lightcraft_engine::Session::new().with_fs().with_system_clock();
+    let _ = session.open_library(&lib, true);
+    tx.send(LibraryLoadResult {
+        session,
+        problem: None,
+        elapsed_ms: 10.0,
+        pending_import: vec![],
+    }).ok();
+
+    // First step receives the session and sets cache_warmup = 5
+    h.step();
+    assert!(h.app.library_loading.is_none());
+    assert!(h.app.cache_warmup > 0, "cache_warmup should be active after session swap");
+
+    // Step through the warmup frames — each one should decrement the counter
+    while h.app.cache_warmup > 0 {
+        h.step();
+    }
+
+    // After warmup completes, the session has a library and the overlay is gone
+    assert_eq!(h.app.cache_warmup, 0);
+    assert!(h.app.session.library.is_some());
+
+    drop(h);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A failed deferred load does NOT trigger cache warmup (the catalog is empty).
+#[test]
+fn deferred_library_no_warmup_on_failure() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app = LightcraftApp::new(lightcraft_engine::Session::new().with_fs(), Services::default());
+    let app = app.with_deferred_library(rx);
+    let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+    h.step();
+
+    tx.send(LibraryLoadResult {
+        session: lightcraft_engine::Session::new().with_fs().with_system_clock(),
+        problem: Some(LibraryProblem::new("/bad/path", "disk on fire")),
+        elapsed_ms: 5.0,
+        pending_import: vec![],
+    }).ok();
+    h.step();
+
+    // No warmup on failure — the catalog is empty so there's nothing to warm
+    assert_eq!(h.app.cache_warmup, 0);
+    assert!(h.app.library_loading.is_none());
+    assert!(h.app.library_problem.is_some());
+}
+
 /// When the background thread disappears (e.g. panic), the app recovers gracefully.
 #[test]
 fn deferred_library_handles_thread_crash() {

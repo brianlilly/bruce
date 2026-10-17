@@ -213,6 +213,9 @@ pub struct LightcraftApp {
     /// The library is loading on a background thread: the window is shown immediately and the
     /// session is swapped once it's ready (issue #137).
     pub library_loading: Option<LibraryLoading>,
+    /// After the session swaps in, warm up expensive O(n) caches over several frames so the UI
+    /// doesn't hang.  While > 0 the loading overlay stays up and one cache is populated per frame.
+    pub(crate) cache_warmup: u8,
 }
 
 /// Deferred library loading: the heavy catalog I/O happens on a background thread so the window
@@ -280,6 +283,7 @@ impl LightcraftApp {
             memory_applied: None,
             library_problem: None,
             library_loading: None,
+            cache_warmup: 0,
         }
     }
 
@@ -625,9 +629,6 @@ impl LightcraftApp {
                     let pending_import = result.pending_import;
                     self.session = result.session;
                     self.library_loading = None;
-                    // Let the grid render for a couple of frames before starting precache init
-                    // (which does an O(n) collect of all photo IDs).
-                    self.precache_defer = 2;
                     // The availability worker was started on the empty session; start it on the
                     // real one so "is the original there?" checks work (grid overlay, Info panel).
                     let repaint = ctx.clone();
@@ -635,8 +636,18 @@ impl LightcraftApp {
                     if let Some(mut p) = problem {
                         p.pending_import = pending_import;
                         self.library_problem = Some(p);
-                    } else if !pending_import.is_empty() {
-                        let _ = self.run("library.import", serde_json::json!({"paths": pending_import}));
+                    } else {
+                        // Warm expensive O(n) caches over several frames while the loading
+                        // overlay stays up, so the first real UI frame has all caches hot.
+                        // Each step is one O(n) pass; the overlay keeps the window responsive.
+                        // Only on success — a failed load has an empty catalog so no warmup needed.
+                        self.cache_warmup = 5;
+                        // Let precache init (O(n) photo-ID collect) wait until after warmup +
+                        // a couple of rendered frames.
+                        self.precache_defer = 8;
+                        if !pending_import.is_empty() {
+                            let _ = self.run("library.import", serde_json::json!({"paths": pending_import}));
+                        }
                         self.ui.view = state::ViewMode::PhotoGrid;
                     }
                 }
@@ -650,6 +661,21 @@ impl LightcraftApp {
                     self.library_loading = None;
                 }
             }
+        }
+        // Progressively warm O(n) caches after session swap, one per frame, while the loading
+        // overlay stays on screen.  This keeps each frame short enough that Windows doesn't mark
+        // the window "Not Responding."
+        if self.cache_warmup > 0 {
+            match self.cache_warmup {
+                5 => { self.caches.counts(&self.session.catalog); }
+                4 => { self.session.source_total(); }
+                3 => { self.caches.date_groups(&self.session.catalog); }
+                2 => { self.caches.keyword_tree(&self.session.catalog); }
+                1 => { let _ = self.session.visible_shared(); }
+                _ => {}
+            }
+            self.cache_warmup -= 1;
+            ctx.request_repaint();
         }
         if !self.styled {
             theme::install_fonts(ctx);
@@ -894,6 +920,15 @@ impl LightcraftApp {
             self.end_frame(t0);
             return;
         }
+        // While caches warm up after a deferred library load, skip all panel rendering and show
+        // only the loading overlay.  This keeps each frame well under the ~5 s threshold where
+        // Windows marks the window "Not Responding."
+        if self.cache_warmup > 0 {
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |_| {});
+            loading_overlay(self, &ctx);
+            self.end_frame(t0);
+            return;
+        }
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
         panels::topbar::show(self, ui);
@@ -939,9 +974,10 @@ impl LightcraftApp {
     }
 }
 
-/// Full-screen loading overlay while the library loads on a background thread (issue #137).
+/// Full-screen loading overlay while the library loads on a background thread (issue #137),
+/// or while caches warm up after the session swaps in.
 fn loading_overlay(app: &LightcraftApp, ctx: &egui::Context) {
-    if app.library_loading.is_none() {
+    if app.library_loading.is_none() && app.cache_warmup == 0 {
         return;
     }
     let t = theme::Tokens::get(ctx);
