@@ -365,6 +365,12 @@ pub struct UiState {
     pub navigator: bool,
     /// App preferences (Settings dialog).
     pub settings: AppSettings,
+    /// Window size in logical points the last time it was closed, used to restore the same size on
+    /// the next launch and to pre-compute grid layout during cache warmup.
+    pub window_size: [f32; 2],
+    /// Display scale the last time it was closed, used to pre-compute thumbnail pixel sizes during
+    /// cache warmup so the grid layout matches the actual display.
+    pub pixels_per_point: f32,
     /// Window full screen requested (⇧⌘F); the host applies it (`None` = no change pending).
     #[serde(skip)]
     pub window_fullscreen: Option<bool>,
@@ -623,6 +629,8 @@ impl Default for UiState {
             info_overlay: InfoOverlay::Off,
             navigator: true,
             settings: AppSettings::default(),
+            window_size: [1600.0, 1000.0],
+            pixels_per_point: 1.0,
             window_fullscreen: None,
             filter_bar: false,
             local_roots: Vec::new(),
@@ -679,6 +687,19 @@ impl UiState {
         self.left_width = LEFT_WIDTH.clamp(self.left_width);
         self.right_width = RIGHT_WIDTH.clamp(self.right_width);
         self.brush_size = self.brush_size.clamp(0.002, 0.5);
+        // Window size: at least the minimum, at most something reasonable; fall back to default on
+        // non-finite (NaN from a corrupt ui.json).
+        if !self.window_size[0].is_finite() || self.window_size[0] < 900.0 {
+            self.window_size[0] = 1600.0;
+        }
+        if !self.window_size[1].is_finite() || self.window_size[1] < 560.0 {
+            self.window_size[1] = 1000.0;
+        }
+        self.window_size[0] = self.window_size[0].min(7680.0);
+        self.window_size[1] = self.window_size[1].min(4320.0);
+        if !self.pixels_per_point.is_finite() || self.pixels_per_point < 0.5 || self.pixels_per_point > 8.0 {
+            self.pixels_per_point = 1.0;
+        }
         self.dialog = None;
         self.fullscreen = false;
         if !crate::state::PREVIEW_EDGES.contains(&self.settings.preview_edge) {

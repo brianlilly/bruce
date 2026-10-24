@@ -506,10 +506,13 @@ fn main() -> eframe::Result {
     let gpu_crash = gpu_crash_check();
     let gpu_on = prefs.as_ref().is_none_or(|u| u.settings.gpu) && gpu_crash.is_none();
     lightcraft_engine::gpu::set_enabled(gpu_on);
+    // Restore the window to the same size the user left it at (saved in ui.json); fall back to
+    // the default 1600x1000 for a fresh install or a corrupt file.
+    let initial_size = prefs.as_ref().map_or([1600.0, 1000.0], |u| u.window_size);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Bruce")
-            .with_inner_size([1600.0, 1000.0])
+            .with_inner_size(initial_size)
             .with_min_inner_size([900.0, 560.0])
             .with_drag_and_drop(true)
             .with_fullsize_content_view(true)

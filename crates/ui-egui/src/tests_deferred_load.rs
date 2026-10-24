@@ -4,7 +4,7 @@
 
 use crate::headless::Headless;
 use crate::panels::library_problem::LibraryProblem;
-use crate::{LightcraftApp, LibraryLoadResult, Services};
+use crate::{LibraryLoadResult, LightcraftApp, Services};
 
 fn has(h: &Headless, id: &str) -> bool {
     h.app.widgets.iter().any(|(w, _)| w == id)
@@ -33,12 +33,7 @@ fn deferred_library_swaps_session_on_completion() {
     // Simulate the background thread completing: send a session with a library
     let mut session = lightcraft_engine::Session::new().with_fs().with_system_clock();
     let _ = session.open_library(&lib, true);
-    let result = LibraryLoadResult {
-        session,
-        problem: None,
-        elapsed_ms: 42.0,
-        pending_import: vec![],
-    };
+    let result = LibraryLoadResult { session, problem: None, elapsed_ms: 42.0, pending_import: vec![] };
     tx.send(result).ok();
     h.step();
     h.step();
@@ -99,14 +94,9 @@ fn deferred_library_warms_caches_before_showing_ui() {
     // Simulate the background thread completing
     let mut session = lightcraft_engine::Session::new().with_fs().with_system_clock();
     let _ = session.open_library(&lib, true);
-    tx.send(LibraryLoadResult {
-        session,
-        problem: None,
-        elapsed_ms: 10.0,
-        pending_import: vec![],
-    }).ok();
+    tx.send(LibraryLoadResult { session, problem: None, elapsed_ms: 10.0, pending_import: vec![] }).ok();
 
-    // First step receives the session and sets cache_warmup = 5
+    // First step receives the session and sets cache_warmup = 8
     h.step();
     assert!(h.app.library_loading.is_none());
     assert!(h.app.cache_warmup > 0, "cache_warmup should be active after session swap");
@@ -138,7 +128,8 @@ fn deferred_library_no_warmup_on_failure() {
         problem: Some(LibraryProblem::new("/bad/path", "disk on fire")),
         elapsed_ms: 5.0,
         pending_import: vec![],
-    }).ok();
+    })
+    .ok();
     h.step();
 
     // No warmup on failure — the catalog is empty so there's nothing to warm
@@ -166,4 +157,50 @@ fn deferred_library_handles_thread_crash() {
     // The loading is cleared, but no problem dialog (the thread just died)
     assert!(h.app.library_loading.is_none());
     assert!(h.app.library_problem.is_none());
+}
+
+/// The app tracks the window size from the screen rect so it can restore it on the next launch.
+#[test]
+fn window_size_tracks_screen_rect() {
+    let app = LightcraftApp::new(lightcraft_engine::Session::new().with_fs(), Services::default());
+    let mut h = Headless::new(app, [1400.0, 800.0], 2.0);
+    h.step();
+    // The headless harness feeds a screen_rect of 1400x800 points
+    assert_eq!(h.app.ui.window_size, [1400.0, 800.0]);
+    assert!((h.app.ui.pixels_per_point - 2.0).abs() < 0.01);
+}
+
+/// After a successful deferred load, the grid's O(n) caches (runs, aspects+layout, stacks) are
+/// warmed during the warmup phase so the first rendered grid frame hits all cache hits.
+#[test]
+fn deferred_library_warms_grid_caches() {
+    let dir = std::env::temp_dir().join(format!("lc-ui-gridwarm-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let lib = dir.join("lib");
+    std::fs::create_dir_all(&lib).ok();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app = LightcraftApp::new(lightcraft_engine::Session::new().with_fs(), Services::default());
+    let app = app.with_deferred_library(rx);
+    let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+    h.step();
+
+    let mut session = lightcraft_engine::Session::new().with_fs().with_system_clock();
+    let _ = session.open_library(&lib, true);
+    tx.send(LibraryLoadResult { session, problem: None, elapsed_ms: 10.0, pending_import: vec![] }).ok();
+
+    // Receive the session and step through all warmup frames
+    h.step();
+    while h.app.cache_warmup > 0 {
+        h.step();
+    }
+
+    // The grid caches should have been populated during warmup (empty library = empty caches,
+    // but the warmup steps should have run without errors).  The stacks cache is keyed by the
+    // visible list generation; after warmup it should be set.
+    let (generation, _) = h.app.session.visible_shared();
+    assert!(h.app.caches.grid.stacks_cached(generation), "stacks cache should be warm after warmup");
+
+    drop(h);
+    let _ = std::fs::remove_dir_all(&dir);
 }

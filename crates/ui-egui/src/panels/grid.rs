@@ -108,6 +108,63 @@ impl GridCache {
             }
         }
     }
+
+    /// Whether the stacks cache is populated for the given generation (test helper).
+    #[cfg(test)]
+    pub(crate) fn stacks_cached(&self, generation: u64) -> bool {
+        matches!(&self.stacks, Some((g, _)) if *g == generation)
+    }
+
+    /// Pre-compute runs (step = 0), aspects + layout (step = 1) and stacks (step = 2) so the
+    /// grid's first rendered frame hits all cache hits. `avail_w` is an estimate of the grid's
+    /// available width in points (window width minus panel widths minus margins); if it's wrong
+    /// by a few pixels the layout is recomputed on the first real frame but the heavier runs,
+    /// aspects and stacks caches stay warm.
+    pub(crate) fn warm(
+        &mut self,
+        step: u8,
+        stats: &mut GridStats,
+        cat: &Catalog,
+        ids: &[PhotoId],
+        generation: u64,
+        source: lightcraft_engine::LibrarySource,
+        sort_key: SortKey,
+        sort_group: GroupBy,
+        thumb_size: f32,
+        square: bool,
+        avail_w: f32,
+    ) {
+        let by = resolve_group(sort_group, thumb_size);
+        let group_key = match source {
+            lightcraft_engine::LibrarySource::RecentlyDeleted => None,
+            lightcraft_engine::LibrarySource::RecentlyAdded => Some(SortKey::ImportDate),
+            _ => Some(sort_key),
+        };
+        let runs_key = (generation, group_key, by);
+        match step {
+            0 => {
+                // runs: O(n) date grouping
+                self.runs(stats, cat, ids, runs_key);
+            }
+            1 => {
+                // aspects + layout: O(n) aspect computation + O(n) row layout
+                let runs = self.runs(stats, cat, ids, runs_key);
+                let lay_key = (runs_key, avail_w.to_bits(), thumb_size.to_bits(), square);
+                if !matches!(&self.layout, Some((k, _)) if *k == lay_key) {
+                    stats.layout_builds += 1;
+                    let a = if square { vec![1.0; ids.len()] } else { aspects(cat, ids) };
+                    let spans: Vec<(usize, usize)> = runs.iter().map(|r| (r.start, r.count)).collect();
+                    let l = Arc::new(layout(&a, &spans, avail_w, thumb_size, square));
+                    self.layout = Some((lay_key, l));
+                }
+            }
+            2 => {
+                // stacks: O(n) stack index build
+                self.stacks(stats, cat, generation);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Width / height of each photo's cell: its cropped, oriented shape.

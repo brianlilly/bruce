@@ -641,10 +641,10 @@ impl LightcraftApp {
                         // overlay stays up, so the first real UI frame has all caches hot.
                         // Each step is one O(n) pass; the overlay keeps the window responsive.
                         // Only on success — a failed load has an empty catalog so no warmup needed.
-                        self.cache_warmup = 5;
+                        self.cache_warmup = 8;
                         // Let precache init (O(n) photo-ID collect) wait until after warmup +
                         // a couple of rendered frames.
-                        self.precache_defer = 8;
+                        self.precache_defer = 11;
                         if !pending_import.is_empty() {
                             let _ = self.run("library.import", serde_json::json!({"paths": pending_import}));
                         }
@@ -665,13 +665,54 @@ impl LightcraftApp {
         // Progressively warm O(n) caches after session swap, one per frame, while the loading
         // overlay stays on screen.  This keeps each frame short enough that Windows doesn't mark
         // the window "Not Responding."
+        //
+        // Steps 8-4: sidebar and engine caches.
+        // Steps 3-1: grid caches (runs, aspects+layout, stacks) so the first rendered grid
+        //   frame hits all cache hits and paints instantly.  The grid layout needs the available
+        //   width, which we estimate from the saved window size and panel widths.
         if self.cache_warmup > 0 {
             match self.cache_warmup {
-                5 => { self.caches.counts(&self.session.catalog); }
-                4 => { self.session.source_total(); }
-                3 => { self.caches.date_groups(&self.session.catalog); }
-                2 => { self.caches.keyword_tree(&self.session.catalog); }
-                1 => { let _ = self.session.visible_shared(); }
+                8 => {
+                    self.caches.counts(&self.session.catalog);
+                }
+                7 => {
+                    self.session.source_total();
+                }
+                6 => {
+                    self.caches.date_groups(&self.session.catalog);
+                }
+                5 => {
+                    self.caches.keyword_tree(&self.session.catalog);
+                }
+                4 => {
+                    let _ = self.session.visible_shared();
+                }
+                step @ 1..=3 => {
+                    // Estimate the grid's available width from the saved window size and panel
+                    // widths so the layout cache key matches the first real frame as closely as
+                    // possible.  If the window was resized since the last launch, the layout is
+                    // recomputed cheaply on the first real frame while the heavier runs, aspects
+                    // and stacks caches stay warm.
+                    let strip_w = 48.0_f32;
+                    let left_w = if self.ui.left_panel { self.ui.left_width } else { 0.0 };
+                    let right_w = if self.ui.right != state::RightPanel::None { self.ui.right_width } else { 0.0 };
+                    let avail_w = (self.ui.window_size[0] - strip_w - left_w - right_w - 8.0).max(100.0);
+                    let square = self.ui.view == state::ViewMode::SquareGrid;
+                    let (generation, ids) = self.session.visible_shared();
+                    self.caches.grid.warm(
+                        3 - step,
+                        &mut self.caches.grid_stats,
+                        &self.session.catalog,
+                        &ids,
+                        generation,
+                        self.session.source,
+                        self.session.sort.key,
+                        self.session.sort.group,
+                        self.ui.thumb_size,
+                        square,
+                        avail_w,
+                    );
+                }
                 _ => {}
             }
             self.cache_warmup -= 1;
@@ -708,6 +749,18 @@ impl LightcraftApp {
             self.perf.fps = self.perf.fps * 0.9 + (1.0 / dt).min(240.0) * 0.1;
         }
         self.last_time = now;
+        // Remember the window size and DPI for the next launch (used to restore the window and to
+        // pre-compute the grid layout during cache warmup).
+        if let Some(r) = ctx.input(|i| i.raw.screen_rect)
+            && r.width() >= 900.0
+            && r.height() >= 560.0
+        {
+            self.ui.window_size = [r.width(), r.height()];
+        }
+        let ppp = ctx.pixels_per_point();
+        if ppp.is_finite() && ppp >= 0.5 {
+            self.ui.pixels_per_point = ppp;
+        }
         self.drain_control(ctx);
         self.apply_settings(ctx);
         if !self.synthetic.is_empty() {
@@ -982,22 +1035,12 @@ fn loading_overlay(app: &LightcraftApp, ctx: &egui::Context) {
     }
     let t = theme::Tokens::get(ctx);
     let screen = ctx.content_rect();
-    egui::Area::new(egui::Id::new("library-loading-dim"))
-        .order(egui::Order::Foreground)
-        .fixed_pos(screen.min)
-        .interactable(false)
-        .show(ctx, |ui| {
-            ui.allocate_rect(screen, egui::Sense::hover());
-            ui.painter().rect_filled(screen, 0.0, egui::Color32::from_black_alpha(180));
-            let center = screen.center();
-            ui.painter().text(
-                center,
-                egui::Align2::CENTER_CENTER,
-                i18n::tr("Opening library…"),
-                egui::FontId::proportional(18.0),
-                t.text,
-            );
-        });
+    egui::Area::new(egui::Id::new("library-loading-dim")).order(egui::Order::Foreground).fixed_pos(screen.min).interactable(false).show(ctx, |ui| {
+        ui.allocate_rect(screen, egui::Sense::hover());
+        ui.painter().rect_filled(screen, 0.0, egui::Color32::from_black_alpha(180));
+        let center = screen.center();
+        ui.painter().text(center, egui::Align2::CENTER_CENTER, i18n::tr("Opening library…"), egui::FontId::proportional(18.0), t.text);
+    });
 }
 
 /// How long a screenshot waits for in-flight renders.

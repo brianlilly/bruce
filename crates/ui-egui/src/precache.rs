@@ -99,7 +99,7 @@ impl Precache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lightcraft_engine::media::{thumb_bucket, THUMB_SIZES};
+    use lightcraft_engine::media::{THUMB_SIZES, thumb_bucket};
 
     /// The precache bucket must match what the grid requests for the same pixel size, otherwise
     /// precached thumbnails are never found and every grid cell re-renders from scratch.
@@ -110,13 +110,13 @@ mod tests {
         // value from THUMB_SIZES, then `thumb_bucket(that)` which is an identity for those
         // values. The precache must land in the same bucket.
         for &(thumb_size, ppp) in &[
-            (220.0_f32, 1.0_f32),  // default size, 1x display
-            (220.0, 2.0),          // default size, Retina
-            (150.0, 1.0),          // small thumbs
-            (150.0, 2.0),          // small thumbs, Retina
-            (400.0, 1.0),          // large thumbs
-            (90.0, 1.0),           // minimum thumb size
-            (480.0, 1.0),          // maximum thumb size
+            (220.0_f32, 1.0_f32), // default size, 1x display
+            (220.0, 2.0),         // default size, Retina
+            (150.0, 1.0),         // small thumbs
+            (150.0, 2.0),         // small thumbs, Retina
+            (400.0, 1.0),         // large thumbs
+            (90.0, 1.0),          // minimum thumb size
+            (480.0, 1.0),         // maximum thumb size
         ] {
             // What the grid computes (grid.rs thumb_px logic)
             let grid_px = (thumb_size * ppp).ceil() as usize;
