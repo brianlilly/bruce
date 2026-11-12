@@ -56,6 +56,15 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         }
     }
 
+    // Clamp focused_person to the current list length.
+    if let Some(idx) = app.ui.focused_person {
+        if people.is_empty() {
+            app.ui.focused_person = None;
+        } else if idx >= people.len() {
+            app.ui.focused_person = Some(people.len().saturating_sub(1));
+        }
+    }
+
     if people.is_empty() && clusters.is_empty() {
         let (title, body) = if chips.is_empty() {
             if can_scan {
@@ -76,6 +85,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     egui::ScrollArea::vertical().auto_shrink(false).show_viewport(ui, |ui, viewport| {
         let width = ui.available_width();
         let cols = (((width - PAD * 2.0 + GAP) / (CARD + GAP)).floor() as usize).max(1);
+        app.ui.people_cols = cols;
         let row_h = CARD + LABEL_H + GAP;
 
         // --- Layout: named people rows, then a gap + header + unnamed cluster rows ---
@@ -89,15 +99,18 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 
         // --- Named people cards (virtualized) ---
         let named_top = PAD;
+        let focused = app.ui.focused_person;
         {
             let first = ((viewport.top() - area.top() - named_top) / row_h).floor().max(0.0) as usize;
             let last = (((viewport.bottom() - area.top() - named_top) / row_h).ceil().max(0.0) as usize).min(named_rows);
             for row in first..last {
                 for col in 0..cols {
-                    let Some(person) = people.get(row * cols + col) else { break };
+                    let idx = row * cols + col;
+                    let Some(person) = people.get(idx) else { break };
                     let min = area.min + vec2(PAD + col as f32 * (CARD + GAP), named_top + row as f32 * row_h);
                     let selected = active.as_deref().is_some_and(|a| a.eq_ignore_ascii_case(&person.name));
-                    named_card(app, ui, person, Rect::from_min_size(min, vec2(CARD, CARD + LABEL_H)), ppp, selected);
+                    let is_focused = focused == Some(idx);
+                    named_card(app, ui, person, Rect::from_min_size(min, vec2(CARD, CARD + LABEL_H)), ppp, selected, is_focused);
                 }
             }
         }
@@ -140,7 +153,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
 }
 
 /// A card for a named person.
-fn named_card(app: &mut LightcraftApp, ui: &mut egui::Ui, person: &Person, r: Rect, ppp: f32, selected: bool) {
+fn named_card(app: &mut LightcraftApp, ui: &mut egui::Ui, person: &Person, r: Rect, ppp: f32, selected: bool, focused: bool) {
     let t = Tokens::get(ui.ctx());
     let face = Rect::from_min_size(r.min, vec2(CARD, CARD));
     let resp = ui.interact(r, egui::Id::new(("person-card", &person.name)), Sense::click());
@@ -154,6 +167,8 @@ fn named_card(app: &mut LightcraftApp, ui: &mut egui::Ui, person: &Person, r: Re
     }
     if selected {
         p.rect_stroke(face, 3.0, Stroke::new(2.0, Color32::WHITE), StrokeKind::Outside);
+    } else if focused {
+        p.rect_stroke(face, 3.0, Stroke::new(2.0, t.accent), StrokeKind::Outside);
     } else if resp.hovered() {
         p.rect_stroke(face, 3.0, Stroke::new(1.0, t.text_dim), StrokeKind::Outside);
     }

@@ -722,10 +722,19 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             } else if app.ui.dialog.is_none() && matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) && app.session.active().is_some() {
                 // Enter in the grid opens Detail (Picasa: Enter opens Edit View).
                 app.ui.view = ViewMode::Detail;
-            } else if app.ui.dialog.is_none() && app.ui.view == ViewMode::People && app.session.filter.person.is_some() {
-                // Enter in People view with a person selected: show their photos
-                // (Picasa: Enter on a person card opens their photo set).
-                app.ui.view = ViewMode::PhotoGrid;
+            } else if app.ui.dialog.is_none() && app.ui.view == ViewMode::People {
+                // Enter in People view: open the focused person's photos.
+                // If a person filter is already set, go straight to PhotoGrid.
+                // Otherwise, use the keyboard-focused card to set the filter first.
+                if app.session.filter.person.is_some() {
+                    app.ui.view = ViewMode::PhotoGrid;
+                } else if let Some(idx) = app.ui.focused_person {
+                    let people = app.caches.people(&app.session.catalog, &app.session.filter);
+                    if let Some(person) = people.get(idx) {
+                        let _ = app.run("library.filter", json!({"person": person.name}));
+                        app.ui.view = ViewMode::PhotoGrid;
+                    }
+                }
             }
             Ok(Value::Null)
         }

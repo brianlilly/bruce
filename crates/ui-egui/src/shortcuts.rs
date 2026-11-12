@@ -128,6 +128,15 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context) {
                 fire.push(format!("label:{label}"));
             }
         }
+        // Up/Down arrows in People view: move the focused person card by one row.
+        if app.ui.view == crate::state::ViewMode::People {
+            if matches(i, Modifiers::NONE, Key::ArrowUp) {
+                fire.push("people.up".to_string());
+            }
+            if matches(i, Modifiers::NONE, Key::ArrowDown) {
+                fire.push("people.down".to_string());
+            }
+        }
     });
     use crate::panels::compare;
     // rating/flag/label keys: in Compare/Survey they act on the active photo only; Shift+key or
@@ -177,6 +186,23 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context) {
         } else if f == "view.softProof" && matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid) {
             // S in a grid: expand / collapse the stack (Lightroom's Library binding)
             let _ = app.run("stack.toggle", json!({}));
+        } else if f == "people.up" || f == "people.down" {
+            // Up/Down arrows in the People view: move focus by one row.
+            let people_count = app.caches.people(&app.session.catalog, &app.session.filter).len();
+            if people_count > 0 {
+                let cols = app.ui.people_cols.max(1);
+                let cur = app.ui.focused_person.unwrap_or(0);
+                let next = if f == "people.down" { cur.saturating_add(cols).min(people_count.saturating_sub(1)) } else { cur.saturating_sub(cols) };
+                app.ui.focused_person = Some(next);
+            }
+        } else if app.ui.view == crate::state::ViewMode::People && (f == "library.next" || f == "library.previous") {
+            // Left/Right arrows in the People view move the focused person card.
+            let people_count = app.caches.people(&app.session.catalog, &app.session.filter).len();
+            if people_count > 0 {
+                let cur = app.ui.focused_person.unwrap_or(0);
+                let next = if f == "library.next" { cur.saturating_add(1).min(people_count.saturating_sub(1)) } else { cur.saturating_sub(1) };
+                app.ui.focused_person = Some(next);
+            }
         } else if compare::culling(app) && (f == "library.next" || f == "library.previous") {
             let d = if f == "library.next" { 1 } else { -1 };
             let _ = if app.ui.view == crate::state::ViewMode::Compare { compare::compare_step(app, d) } else { compare::survey_step(app, d) };

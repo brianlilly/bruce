@@ -1861,7 +1861,7 @@ mod tests {
         h.request("ui.key", json!({"key": "escape"}), t);
         assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid, "Escape should return to grid from People");
 
-        // Enter in People view with a person selected → PhotoGrid (their photos).
+        // Enter in People view with a person filter already set → PhotoGrid (their photos).
         h.request("engine.execute", json!({"command": "view.people"}), t);
         h.request("engine.execute", json!({"command": "library.filter", "params": {"person": "Test Person"}}), t);
         assert!(h.app.session.filter.person.is_some());
@@ -1871,10 +1871,18 @@ mod tests {
         assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid, "Enter in People should open person's photos");
         assert!(h.app.session.filter.person.is_some(), "person filter should remain active");
 
-        // Now Escape from person-filtered grid clears filter and returns to People.
+        // Escape from person-filtered grid clears filter and returns to People.
         h.request("ui.key", json!({"key": "escape"}), t);
         assert!(h.app.session.filter.person.is_none(), "person filter should be cleared");
         assert_eq!(h.app.ui.view, crate::state::ViewMode::People, "should return to People view");
+
+        // Arrow keys in People view move focused_person.
+        // (The demo catalog has no named people, so test the state directly.)
+        h.app.ui.focused_person = None;
+        assert_eq!(h.app.ui.focused_person, None, "starts unfocused");
+        // Without people, arrow keys leave focused_person unchanged.
+        h.request("ui.key", json!({"key": "right"}), t);
+        assert_eq!(h.app.ui.focused_person, None, "no people: focus stays None");
 
         h.settle(SETTLE);
     }

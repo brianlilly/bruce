@@ -393,6 +393,13 @@ pub struct UiState {
     /// An unnamed face cluster being named: (cluster_id, name text being edited).
     #[serde(skip)]
     pub naming_cluster: Option<(usize, String)>,
+    /// Keyboard-focused person card in the People view (index into the people list).
+    #[serde(skip)]
+    pub focused_person: Option<usize>,
+    /// Column count of the People grid (set each frame by the People panel, used by arrow-key
+    /// navigation in shortcuts).
+    #[serde(skip)]
+    pub people_cols: usize,
     /// A face region being renamed in the Detail view: (region_index, name text being edited).
     #[serde(skip)]
     pub naming_region: Option<(usize, String)>,
@@ -642,6 +649,8 @@ impl Default for UiState {
             status: String::new(),
             dialog: None,
             naming_cluster: None,
+            focused_person: None,
+            people_cols: 1,
             naming_region: None,
         }
     }
