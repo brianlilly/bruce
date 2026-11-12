@@ -722,6 +722,10 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             } else if app.ui.dialog.is_none() && matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) && app.session.active().is_some() {
                 // Enter in the grid opens Detail (Picasa: Enter opens Edit View).
                 app.ui.view = ViewMode::Detail;
+            } else if app.ui.dialog.is_none() && app.ui.view == ViewMode::People && app.session.filter.person.is_some() {
+                // Enter in People view with a person selected: show their photos
+                // (Picasa: Enter on a person card opens their photo set).
+                app.ui.view = ViewMode::PhotoGrid;
             }
             Ok(Value::Null)
         }

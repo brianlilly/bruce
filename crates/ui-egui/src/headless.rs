@@ -1834,7 +1834,8 @@ mod tests {
     }
 
     /// Picasa-style navigation: Escape from People → PhotoGrid, Enter in grid → Detail,
-    /// Escape from Detail → PhotoGrid, Escape from person-filtered grid → People.
+    /// Escape from Detail → PhotoGrid, Escape from person-filtered grid → People,
+    /// Enter in People with a person selected → PhotoGrid (that person's photos).
     #[test]
     fn picasa_navigation_escape_and_enter() {
         let mut h = demo([1000.0, 700.0]);
@@ -1860,11 +1861,17 @@ mod tests {
         h.request("ui.key", json!({"key": "escape"}), t);
         assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid, "Escape should return to grid from People");
 
-        // Person filter flow: filter by person, then Escape clears filter and returns to People.
-        // The demo catalog may not have named faces, so set the person filter directly.
+        // Enter in People view with a person selected → PhotoGrid (their photos).
+        h.request("engine.execute", json!({"command": "view.people"}), t);
         h.request("engine.execute", json!({"command": "library.filter", "params": {"person": "Test Person"}}), t);
         assert!(h.app.session.filter.person.is_some());
-        assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid);
+        // library.filter switches to PhotoGrid; go back to People to test Enter there.
+        h.app.ui.view = crate::state::ViewMode::People;
+        h.request("ui.key", json!({"key": "enter"}), t);
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid, "Enter in People should open person's photos");
+        assert!(h.app.session.filter.person.is_some(), "person filter should remain active");
+
+        // Now Escape from person-filtered grid clears filter and returns to People.
         h.request("ui.key", json!({"key": "escape"}), t);
         assert!(h.app.session.filter.person.is_none(), "person filter should be cleared");
         assert_eq!(h.app.ui.view, crate::state::ViewMode::People, "should return to People view");
