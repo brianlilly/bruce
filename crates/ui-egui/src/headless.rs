@@ -1833,6 +1833,45 @@ mod tests {
         assert!(!h.app.widgets.iter().any(|(w, _)| w == "canvas:navigator"), "toggled off");
     }
 
+    /// Picasa-style navigation: Escape from People → PhotoGrid, Enter in grid → Detail,
+    /// Escape from Detail → PhotoGrid, Escape from person-filtered grid → People.
+    #[test]
+    fn picasa_navigation_escape_and_enter() {
+        let mut h = demo([1000.0, 700.0]);
+        let t = Duration::from_secs(10);
+        let vis: Vec<u64> = h.app.session.visible_cloned().iter().map(|p| p.0).collect();
+
+        // Select a photo so Enter has a target
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [vis[0]]}}), t);
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid);
+
+        // Enter in grid → Detail
+        h.request("ui.key", json!({"key": "enter"}), t);
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::Detail, "Enter should open Detail from grid");
+
+        // Escape from Detail → PhotoGrid (active photo preserved)
+        h.request("ui.key", json!({"key": "escape"}), t);
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid, "Escape should return to grid from Detail");
+        assert_eq!(h.app.session.active().map(|p| p.0), Some(vis[0]), "active photo preserved");
+
+        // Switch to People view, then Escape → PhotoGrid
+        h.request("engine.execute", json!({"command": "view.people"}), t);
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::People);
+        h.request("ui.key", json!({"key": "escape"}), t);
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid, "Escape should return to grid from People");
+
+        // Person filter flow: filter by person, then Escape clears filter and returns to People.
+        // The demo catalog may not have named faces, so set the person filter directly.
+        h.request("engine.execute", json!({"command": "library.filter", "params": {"person": "Test Person"}}), t);
+        assert!(h.app.session.filter.person.is_some());
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid);
+        h.request("ui.key", json!({"key": "escape"}), t);
+        assert!(h.app.session.filter.person.is_none(), "person filter should be cleared");
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::People, "should return to People view");
+
+        h.settle(SETTLE);
+    }
+
     #[test]
     fn screenshot_request_is_answered_without_a_window() {
         let mut h = demo([800.0, 500.0]);

@@ -352,6 +352,13 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
                 app.ui.view = ViewMode::Detail;
             } else if app.ui.view == ViewMode::Detail {
                 app.ui.view = ViewMode::PhotoGrid;
+            } else if matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) && app.session.filter.person.is_some() {
+                // Escape from a person-filtered grid: clear the person filter and return
+                // to People view (Picasa: Escape exits the person's photo set).
+                let _ = app.run("library.filter", json!({"person": null}));
+                app.ui.view = ViewMode::People;
+            } else if app.ui.view == ViewMode::People {
+                app.ui.view = ViewMode::PhotoGrid;
             }
             Ok(Value::Null)
         }
@@ -712,6 +719,9 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
                 let _ = app.session.end_interaction();
                 app.ui.tool.clear();
                 app.ui.right = Edit;
+            } else if app.ui.dialog.is_none() && matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) && app.session.active().is_some() {
+                // Enter in the grid opens Detail (Picasa: Enter opens Edit View).
+                app.ui.view = ViewMode::Detail;
             }
             Ok(Value::Null)
         }
