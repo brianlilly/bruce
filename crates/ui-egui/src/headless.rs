@@ -1884,6 +1884,14 @@ mod tests {
         h.request("ui.key", json!({"key": "right"}), t);
         assert_eq!(h.app.ui.focused_person, None, "no people: focus stays None");
 
+        // Sidebar People row: clicking it switches to the People view.
+        h.request("engine.execute", json!({"command": "view.photoGrid"}), t);
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::PhotoGrid);
+        h.app.ui.left_panel = true;
+        h.settle(SETTLE);
+        h.request("ui.clickWidget", json!({"id": "source:people"}), t);
+        assert_eq!(h.app.ui.view, crate::state::ViewMode::People, "sidebar People row should open People view");
+
         h.settle(SETTLE);
     }
 

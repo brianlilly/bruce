@@ -108,6 +108,15 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             {
                 let _ = app.run("library.source", json!({"kind": "missing"}));
             }
+            // People (switch to the People view — Picasa's sidebar had a People section)
+            {
+                let people = app.caches.people(&app.session.catalog, &app.session.filter);
+                let n_people = people.len();
+                let is_people = app.ui.view == crate::state::ViewMode::People;
+                if row(app, ui, "people", Icon::Subject, "People", Some(n_people), is_people, 0.0).clicked() {
+                    app.ui.view = crate::state::ViewMode::People;
+                }
+            }
             ui.add_space(10.0);
             // By Date (primary navigation: photos organized chronologically)
             let (_, dates_open) = sidebar_section_header(app, ui, "byDate", "By Date");
