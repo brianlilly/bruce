@@ -11,6 +11,7 @@
 
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use lightcraft_catalog::Person;
+use lightcraft_engine::cmd::face_scan::ScanPhase;
 use lightcraft_engine::face_index::UnnamedCluster;
 use serde_json::json;
 
@@ -39,20 +40,76 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let chips = lightcraft_engine::filter_chips(&app.session.filter, &app.session.catalog);
     super::chips::show(app, ui, &chips);
 
-    // --- "Scan for Faces" button ---
+    // --- "Scan for Faces" button / progress ---
     let can_scan = app.session.face_detector.installed() && app.session.face_embedder.installed();
+    let is_scanning = app.session.face_scan.as_ref().is_some_and(|s| !s.progress.finished.load(std::sync::atomic::Ordering::Relaxed));
     if can_scan {
         let (btn_rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::hover());
-        let btn_size = vec2(140.0, 28.0);
-        let btn_min = pos2(btn_rect.right() - PAD - btn_size.x, btn_rect.center().y - btn_size.y / 2.0);
-        let btn = Rect::from_min_size(btn_min, btn_size);
-        let btn_resp = ui.interact(btn, egui::Id::new("scan-for-faces-btn"), Sense::click());
-        register(ui.ctx(), "button:scanForFaces".to_string(), btn);
-        let bg = if btn_resp.hovered() { t.accent } else { t.accent.gamma_multiply(0.85) };
-        ui.painter().rect_filled(btn, 4.0, bg);
-        ui.painter().text(btn.center(), Align2::CENTER_CENTER, "Scan for Faces", t.semibold(13.0), Color32::WHITE);
-        if btn_resp.on_hover_text("Detect, embed, and cluster faces in all photos").clicked() {
-            let _ = app.run("face.scanAll", json!({}));
+        if is_scanning {
+            // Show progress bar + cancel button while scanning.
+            let scan = app.session.face_scan.as_ref();
+            if let Some(scan) = scan {
+                let progress = &scan.progress;
+                let phase = *progress.phase.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                let (label, frac) = match phase {
+                    ScanPhase::Detecting => {
+                        let total = progress.detect_total.load(std::sync::atomic::Ordering::Relaxed);
+                        let done = progress.detect_done.load(std::sync::atomic::Ordering::Relaxed);
+                        let faces = progress.faces_found.load(std::sync::atomic::Ordering::Relaxed);
+                        let f = if total > 0 { done as f32 / total as f32 } else { 0.0 };
+                        (format!("Detecting… {done}/{total} ({faces} faces)"), f)
+                    }
+                    ScanPhase::Embedding => {
+                        let total = progress.embed_total.load(std::sync::atomic::Ordering::Relaxed);
+                        let done = progress.embed_done.load(std::sync::atomic::Ordering::Relaxed);
+                        let f = if total > 0 { done as f32 / total as f32 } else { 0.0 };
+                        (format!("Embedding… {done}/{total}"), f)
+                    }
+                    ScanPhase::Clustering => ("Clustering…".to_string(), 1.0),
+                    ScanPhase::Done => ("Done".to_string(), 1.0),
+                };
+
+                // Progress bar
+                let bar_w = btn_rect.width() - PAD * 2.0 - 80.0; // leave room for cancel
+                let bar_h = 6.0;
+                let bar_min = pos2(btn_rect.left() + PAD, btn_rect.center().y + 4.0);
+                let bar_rect = Rect::from_min_size(bar_min, vec2(bar_w, bar_h));
+                ui.painter().rect_filled(bar_rect, 3.0, t.canvas);
+                let fill_w = bar_w * frac.clamp(0.0, 1.0);
+                if fill_w > 0.5 {
+                    let fill = Rect::from_min_size(bar_min, vec2(fill_w, bar_h));
+                    ui.painter().rect_filled(fill, 3.0, t.accent);
+                }
+
+                // Label above the bar
+                let label_pos = pos2(btn_rect.left() + PAD, btn_rect.center().y - 4.0);
+                ui.painter().text(label_pos, Align2::LEFT_CENTER, label, t.font(12.0), t.text_dim);
+
+                // Cancel button
+                let cancel_size = vec2(60.0, 22.0);
+                let cancel_min = pos2(btn_rect.right() - PAD - cancel_size.x, btn_rect.center().y - cancel_size.y / 2.0);
+                let cancel_rect = Rect::from_min_size(cancel_min, cancel_size);
+                let cancel_resp = ui.interact(cancel_rect, egui::Id::new("cancel-face-scan-btn"), Sense::click());
+                register(ui.ctx(), "button:cancelFaceScan".to_string(), cancel_rect);
+                let cancel_bg = if cancel_resp.hovered() { t.text_dim.gamma_multiply(0.3) } else { t.canvas };
+                ui.painter().rect_filled(cancel_rect, 4.0, cancel_bg);
+                ui.painter().text(cancel_rect.center(), Align2::CENTER_CENTER, "Cancel", t.font(12.0), t.text_dim);
+                if cancel_resp.clicked() {
+                    let _ = app.run("face.scanCancel", json!({}));
+                }
+            }
+        } else {
+            let btn_size = vec2(140.0, 28.0);
+            let btn_min = pos2(btn_rect.right() - PAD - btn_size.x, btn_rect.center().y - btn_size.y / 2.0);
+            let btn = Rect::from_min_size(btn_min, btn_size);
+            let btn_resp = ui.interact(btn, egui::Id::new("scan-for-faces-btn"), Sense::click());
+            register(ui.ctx(), "button:scanForFaces".to_string(), btn);
+            let bg = if btn_resp.hovered() { t.accent } else { t.accent.gamma_multiply(0.85) };
+            ui.painter().rect_filled(btn, 4.0, bg);
+            ui.painter().text(btn.center(), Align2::CENTER_CENTER, "Scan for Faces", t.semibold(13.0), Color32::WHITE);
+            if btn_resp.on_hover_text("Detect, embed, and cluster faces in all photos").clicked() {
+                let _ = app.run("face.scanAll", json!({}));
+            }
         }
     }
 

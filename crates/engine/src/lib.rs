@@ -166,6 +166,8 @@ pub struct Session {
     pub face_embedder: embed::FaceEmbedModule,
     /// Persistent face embedding index (for clustering).
     pub face_index: face_index::FaceIndex,
+    /// Background face scan state machine (detect → embed → cluster).
+    pub face_scan: Option<cmd::face_scan::FaceScan>,
     /// Selected spot (Remove panel), by index into the active photo's spots.
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
@@ -258,6 +260,7 @@ impl Session {
             face_detector: face::FaceDetector::default(),
             face_embedder: embed::FaceEmbedModule::default(),
             face_index: face_index::FaceIndex::default(),
+            face_scan: None,
             active_spot: None,
             library: None,
             xmp: sidecar::XmpPrefs::default(),

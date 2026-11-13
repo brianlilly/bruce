@@ -19,12 +19,6 @@ fn embed_installed(s: &Session) -> std::result::Result<(), String> {
     s.face_embedder.model_dir().map(|_| ())
 }
 
-/// Enablement: both face detection and embedding models must be installed.
-fn detect_and_embed_installed(s: &Session) -> std::result::Result<(), String> {
-    detect_installed(s)?;
-    embed_installed(s)
-}
-
 /// Collect all photo ids that have no face regions yet.
 fn photos_without_faces(s: &Session) -> Vec<PhotoId> {
     s.catalog.photos().filter(|photo| !photo.meta.regions.iter().any(|r| matches!(r.kind, RegionKind::Face))).map(|photo| photo.id).collect()
@@ -123,38 +117,6 @@ pub fn specs() -> Vec<CommandSpec> {
                     "skipped": skipped,
                     "errors": errors.len(),
                     "errorDetails": errors,
-                }))
-            }
-        ),
-        cmd!(
-            "face.scanAll",
-            "Scan for Faces",
-            ["Photo"],
-            None,
-            "{eps?: f64 (default 0.45), minSamples?: int (default 2)} → {detected, embedded, clusters, errors} — detect faces in all photos, embed them, and cluster",
-            detect_and_embed_installed,
-            |s, p| {
-                // 1. Detect faces in all photos that don't have any.
-                let detect_result = s.execute("face.detectAll", &json!({}))?;
-                let detect_errors = detect_result.get("errors").and_then(Value::as_u64).unwrap_or(0);
-                let detected = detect_result.get("detected").and_then(Value::as_u64).unwrap_or(0);
-
-                // 2. Embed all face regions that aren't indexed yet.
-                let embed_result = s.execute("face.embedAll", &json!({}))?;
-                let embedded = embed_result.get("embedded").and_then(Value::as_u64).unwrap_or(0);
-                let embed_errors = embed_result.get("errors").and_then(Value::as_u64).unwrap_or(0);
-
-                // 3. Cluster.
-                let eps = f64_or(p, "eps", 0.45);
-                let min_samples = p.get("minSamples").and_then(Value::as_u64).unwrap_or(2);
-                let cluster_result = s.execute("face.cluster", &json!({"eps": eps, "minSamples": min_samples}))?;
-                let num_clusters = cluster_result.get("clusters").and_then(Value::as_array).map(|a| a.len() as u64).unwrap_or(0);
-
-                Ok(json!({
-                    "detected": detected,
-                    "embedded": embedded,
-                    "clusters": num_clusters,
-                    "errors": detect_errors.saturating_add(embed_errors),
                 }))
             }
         ),
@@ -334,7 +296,7 @@ mod tests {
     #[test]
     fn detect_and_embed_installed_fails_without_models() {
         let s = Session::new();
-        let result = detect_and_embed_installed(&s);
+        let result = detect_installed(&s).and_then(|_| embed_installed(&s));
         assert!(result.is_err());
     }
 

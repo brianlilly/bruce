@@ -770,6 +770,28 @@ impl LightcraftApp {
         merge::poll(self, ctx);
         import::poll_scan(self, ctx);
         import::tick(self, ctx);
+        // Drive the cooperative face scan forward (one step per frame).
+        if self.session.face_scan_tick() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        } else if let Some(ref scan) = self.session.face_scan {
+            use std::sync::atomic::Ordering;
+            let progress = &scan.progress;
+            if progress.finished.load(Ordering::Relaxed) {
+                // Emit a completion toast once.
+                let faces = progress.faces_found.load(Ordering::Relaxed);
+                let clusters = progress.clusters.load(Ordering::Relaxed);
+                let errors = progress.errors.load(Ordering::Relaxed);
+                let cancelled = progress.cancel.load(Ordering::Relaxed);
+                if cancelled {
+                    self.toast(ctx, "Face scan cancelled");
+                } else if errors > 0 {
+                    self.toast_for(ctx, format!("Face scan done: {faces} faces, {clusters} clusters ({errors} errors)"), 4.0);
+                } else {
+                    self.toast_for(ctx, format!("Face scan done: {faces} faces, {clusters} clusters"), 3.0);
+                }
+                self.session.face_scan = None;
+            }
+        }
         // Background thumbnail pre-generation: start when the catalog has photos and restart when
         // the catalog changes (photos added, removed or a different library opened) or when the
         // grid thumbnail size changes (a different bucket means different cache keys).

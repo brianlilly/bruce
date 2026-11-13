@@ -14,6 +14,7 @@ mod develop;
 mod edit;
 mod export;
 mod face;
+pub mod face_scan;
 pub mod filters;
 pub mod keywords;
 pub mod library;
@@ -137,6 +138,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(prefs::specs());
         v.extend(export::specs());
         v.extend(face::specs());
+        v.extend(face_scan::specs());
         v.extend(before::specs());
         v.extend(browse::specs());
         v.extend(missing::specs());
