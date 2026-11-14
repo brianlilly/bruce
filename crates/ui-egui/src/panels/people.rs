@@ -155,11 +155,13 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let (area, _) = ui.allocate_exact_size(vec2(width, total_h), Sense::hover());
 
         // --- Named people cards (virtualized) ---
+        // `viewport` is in content coordinates (0 … total_h); card positions are also in
+        // content coordinates.  `area.min` is the screen-space origin (used only for painting).
         let named_top = PAD;
         let focused = app.ui.focused_person;
         {
-            let first = ((viewport.top() - area.top() - named_top) / row_h).floor().max(0.0) as usize;
-            let last = (((viewport.bottom() - area.top() - named_top) / row_h).ceil().max(0.0) as usize).min(named_rows);
+            let first = ((viewport.top() - named_top) / row_h).floor().max(0.0) as usize;
+            let last = (((viewport.bottom() - named_top) / row_h).ceil().max(0.0) as usize).min(named_rows);
             for row in first..last {
                 for col in 0..cols {
                     let idx = row * cols + col;
@@ -176,9 +178,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         if has_clusters {
             let cluster_top = named_top + named_rows as f32 * row_h;
 
-            // Section header
-            let header_rect = Rect::from_min_size(area.min + vec2(0.0, cluster_top), vec2(width, HEADER_H));
-            if viewport.intersects(header_rect) {
+            // Section header — check visibility in content coordinates, paint in screen coordinates.
+            let header_content = Rect::from_min_size(pos2(0.0, cluster_top), vec2(width, HEADER_H));
+            let header_rect = header_content.translate(area.min.to_vec2());
+            if viewport.intersects(header_content) {
                 ui.painter().text(
                     pos2(header_rect.left() + PAD, header_rect.center().y),
                     Align2::LEFT_CENTER,
@@ -196,8 +199,8 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
 
             let cards_top = cluster_top + cluster_header_h;
-            let first = ((viewport.top() - area.top() - cards_top) / row_h).floor().max(0.0) as usize;
-            let last = (((viewport.bottom() - area.top() - cards_top) / row_h).ceil().max(0.0) as usize).min(cluster_rows);
+            let first = ((viewport.top() - cards_top) / row_h).floor().max(0.0) as usize;
+            let last = (((viewport.bottom() - cards_top) / row_h).ceil().max(0.0) as usize).min(cluster_rows);
             for row in first..last {
                 for col in 0..cols {
                     let Some(cluster) = clusters.get(row * cols + col) else { break };
