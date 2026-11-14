@@ -115,9 +115,13 @@ pub struct FaceScan {
 }
 
 /// Maximum number of detection requests queued to the worker at once.
-const MAX_DETECT_FLIGHT: usize = 4;
+///
+/// Now that rendering happens on the worker thread (not the UI thread), we can keep a deeper
+/// pipeline without freezing the UI.  Queueing a job is cheap (just creating a RenderJob —
+/// no I/O), so we can queue up to 2 per tick and let the single-threaded worker serialize them.
+const MAX_DETECT_FLIGHT: usize = 2;
 /// Maximum number of embedding requests queued to the worker at once.
-const MAX_EMBED_FLIGHT: usize = 8;
+const MAX_EMBED_FLIGHT: usize = 4;
 
 impl crate::Session {
     /// Start a background face scan. Returns the shared progress handle.

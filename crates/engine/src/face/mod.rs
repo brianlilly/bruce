@@ -140,18 +140,15 @@ fn faces_to_regions(faces: &[lightcraft_face::Face], img_w: usize, img_h: usize)
 }
 
 impl Session {
-    /// Render a photo's RGB pixels for face detection: the photo as-imported (no develop
-    /// settings, no crop), scaled to fit within `DETECT_EDGE × DETECT_EDGE`.
+    /// Create a [`RenderJob`] for face detection: the photo as-imported (no develop settings,
+    /// no crop), scaled to fit within `DETECT_EDGE × DETECT_EDGE`.  This is cheap — it only
+    /// sets up parameters; the actual image decode happens when `.run()` is called (on the
+    /// worker thread, not the UI thread).
     #[cfg(feature = "face")]
-    fn face_detect_render(&mut self, id: PhotoId) -> Result<(Vec<u8>, usize, usize), String> {
+    fn face_detect_render_job(&mut self, id: PhotoId) -> Result<crate::media::RenderJob, String> {
         let _exists = self.catalog.photo(id).ok_or("no such photo")?;
         let settings = lightcraft_develop::DevelopSettings::default();
-        let job = self.preview_job(id, DETECT_EDGE, DETECT_EDGE, false, &settings).ok_or("could not render the photo for face detection")?;
-        let rendered = job.run();
-        let img = rendered.rendered.map_err(|e| format!("could not render the photo for face detection: {e}"))?;
-        let (w, h) = (img.image.width, img.image.height);
-        let rgb: Vec<u8> = img.image.data.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
-        Ok((rgb, w, h))
+        self.preview_job(id, DETECT_EDGE, DETECT_EDGE, false, &settings).ok_or_else(|| "could not create a render job for face detection".to_string())
     }
 
     /// Detect faces in photo `id`, waiting for the worker (CLI, tests, or non-background mode).
@@ -159,15 +156,15 @@ impl Session {
         self.face_detector.model_dir()?;
         #[cfg(feature = "face")]
         {
-            let (rgb, w, h) = self.face_detect_render(id)?;
+            let render = self.face_detect_render_job(id)?;
             let dir = self.face_detector.model_dir()?;
             let (tx, rx) = std::sync::mpsc::channel();
-            let job = worker::Job { dir, photo: id, rgb, width: w, height: h, reply: tx };
+            let job = worker::Job { dir, photo: id, render, reply: tx };
             self.face_detector.worker.submit(job)?;
             match rx.recv_timeout(WAIT) {
                 Ok(o) => {
                     let faces = o.result?;
-                    let regions = faces_to_regions(&faces, w, h);
+                    let regions = faces_to_regions(&faces, o.width, o.height);
                     Ok(DetectedFaces { photo: id, faces: regions })
                 }
                 Err(_) => Err("the face detection model took too long; try again".into()),
@@ -181,15 +178,16 @@ impl Session {
     }
 
     /// Background mode: queue face detection for photo `id`; the result is collected by
-    /// [`Session::face_detect_poll`].
+    /// [`Session::face_detect_poll`].  This is cheap: it only creates a [`RenderJob`] (no I/O)
+    /// and sends it to the worker thread, which does the actual image decode.
     pub fn face_detect_queue(&mut self, id: PhotoId) -> Result<(), String> {
         self.face_detector.model_dir()?;
         #[cfg(feature = "face")]
         {
-            let (rgb, w, h) = self.face_detect_render(id)?;
+            let render = self.face_detect_render_job(id)?;
             let dir = self.face_detector.model_dir()?;
             let reply = self.face_detector.results.0.clone();
-            let job = worker::Job { dir, photo: id, rgb, width: w, height: h, reply };
+            let job = worker::Job { dir, photo: id, render, reply };
             self.face_detector.worker.submit(job)
         }
         #[cfg(not(feature = "face"))]

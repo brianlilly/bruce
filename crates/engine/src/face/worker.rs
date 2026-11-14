@@ -16,21 +16,22 @@ use std::time::Duration;
 
 use lightcraft_catalog::PhotoId;
 
+use crate::media::RenderJob;
+
 /// Unload the model after this long without a request.
 pub const IDLE_UNLOAD: Duration = Duration::from_secs(10 * 60);
 
 /// One request: detect faces in a photo.
+///
+/// The `render` field carries a [`RenderJob`] that the **worker thread** calls `.run()` on —
+/// image decoding happens here, not on the UI thread.
 pub struct Job {
     /// The model folder (containing `scrfd_500m.safetensors`).
     pub dir: PathBuf,
     /// Which photo the request is about.
     pub photo: PhotoId,
-    /// 8-bit RGB pixels, row-major.
-    pub rgb: Vec<u8>,
-    /// Image width in pixels.
-    pub width: usize,
-    /// Image height in pixels.
-    pub height: usize,
+    /// The render job to produce the photo's RGB pixels (run on the worker thread).
+    pub render: RenderJob,
     /// Where to send the result.
     pub reply: mpsc::Sender<Outcome>,
 }
@@ -171,7 +172,11 @@ fn run(rx: &mpsc::Receiver<Job>, shared: &Shared, idle: Duration) {
             }
         };
         shared.loaded.store(state.model.is_some(), Ordering::SeqCst);
-        let _ = job.reply.send(Outcome { photo: job.photo, width: job.width, height: job.height, result });
+        let (face_result, width, height) = match result {
+            Ok((faces, w, h)) => (Ok(faces), w, h),
+            Err(e) => (Err(e), 0, 0),
+        };
+        let _ = job.reply.send(Outcome { photo: job.photo, width, height, result: face_result });
     }
 }
 
@@ -189,12 +194,20 @@ fn model<'a>(state: &'a mut State, shared: &Shared, dir: &std::path::Path) -> Re
     state.model.as_mut().map(|(_, m)| m).ok_or_else(|| "the model did not load".to_string())
 }
 
-fn run_job(state: &mut State, shared: &Shared, job: &Job) -> Result<Vec<lightcraft_face::Face>, String> {
+/// Render the photo and detect faces in it.
+fn run_job(state: &mut State, shared: &Shared, job: &Job) -> Result<(Vec<lightcraft_face::Face>, usize, usize), String> {
+    // 1. Render the photo (image decode + scale) — the expensive part that used to block the UI.
+    let rendered = job.render.clone().run();
+    let img = rendered.rendered.map_err(|e| format!("could not render the photo for face detection: {e}"))?;
+    let (w, h) = (img.image.width, img.image.height);
+    let rgb: Vec<u8> = img.image.data.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
+
+    // 2. Run SCRFD on the rendered pixels.
     let m = model(state, shared, &job.dir)?;
     let t = web_time::Instant::now();
-    let faces = m.detect(&job.rgb, job.width, job.height, 0.5, 0.45).map_err(|e| e.to_string())?;
-    log::info!("SCRFD detected {} faces in {}×{} ({:?})", faces.len(), job.width, job.height, t.elapsed());
-    Ok(faces)
+    let faces = m.detect(&rgb, w, h, 0.5, 0.45).map_err(|e| e.to_string())?;
+    log::info!("SCRFD detected {} faces in {}×{} ({:?})", faces.len(), w, h, t.elapsed());
+    Ok((faces, w, h))
 }
 
 #[cfg(test)]
@@ -202,9 +215,12 @@ mod tests {
     use super::*;
 
     fn job(reply: &mpsc::Sender<Outcome>) -> Job {
-        // An empty folder: loading fails with an error (no model files).
+        // An empty model folder: loading fails with an error (no model files).
         let dir = std::env::temp_dir().join(format!("bruce-face-worker-none-{}", std::process::id()));
-        Job { dir, photo: PhotoId(1), rgb: vec![0u8; 3 * 4 * 4], width: 4, height: 4, reply: reply.clone() }
+        // A render job pointing at a non-existent file: rendering will fail before detection,
+        // which is fine — we want to test that errors come back cleanly.
+        let render = crate::media::RenderJob::dummy(PhotoId(1));
+        Job { dir, photo: PhotoId(1), render, reply: reply.clone() }
     }
 
     #[test]

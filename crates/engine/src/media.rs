@@ -486,6 +486,36 @@ pub struct RenderResult {
 }
 
 impl RenderJob {
+    /// A render job that will fail (no source file). Used only in tests.
+    #[cfg(test)]
+    pub fn dummy(photo: PhotoId) -> Self {
+        RenderJob {
+            request_id: 0,
+            cache_generation: 0,
+            source_key: None,
+            photo,
+            level: SourceLevel::Thumb,
+            source: SourceRef::File { path: String::new(), max_edge: 64, loader: None, fallback: None },
+            origin: Source::File { path: String::new() },
+            info: SourceInfo::default(),
+            settings: Arc::new(DevelopSettings::default()),
+            request: RenderRequest {
+                max_w: 64,
+                max_h: 64,
+                quality: Quality::default(),
+                apply_crop: false,
+                overlay: Default::default(),
+                space: Default::default(),
+                depth: Default::default(),
+                proof: None,
+            },
+            key: 0,
+            cache: None,
+            stages: None,
+            view_cache: None,
+        }
+    }
+
     /// Render at draft quality (interactive drags). Gets its own result key.
     pub fn draft(mut self) -> Self {
         if self.request.quality != Quality::Draft {

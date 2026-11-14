@@ -24,10 +24,6 @@ pub const NOT_INSTALLED: &str = "The AdaFace face embedding model is not install
 #[cfg_attr(not(feature = "face-embed"), allow(dead_code))]
 const WAIT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
-/// Edge size for the face crop fed to the embedding model (112×112).
-#[cfg(feature = "face-embed")]
-const EMBED_EDGE: usize = lightcraft_face_embed::INPUT_SIZE;
-
 /// A computed face embedding ready for the session.
 pub struct FaceEmbedding {
     pub photo: PhotoId,
@@ -115,10 +111,12 @@ impl FaceEmbedModule {
 }
 
 impl Session {
-    /// Render a 112×112 RGB face crop for embedding: the face region expanded to a square
-    /// (with some margin for hair and chin), scaled to 112×112.
+    /// Create a [`RenderJob`] for a face-embedding crop: the face region expanded to a square
+    /// (with some margin for hair and chin), at a size that yields a sharp 112×112 crop.
+    /// This is cheap — it only sets up parameters; the actual image decode and scaling happen
+    /// when `.run()` is called (on the worker thread, not the UI thread).
     #[cfg(feature = "face-embed")]
-    fn face_embed_render(&mut self, id: PhotoId, region: &lightcraft_meta::Region) -> Result<Vec<u8>, String> {
+    fn face_embed_render_job(&mut self, id: PhotoId, region: &lightcraft_meta::Region) -> Result<crate::media::RenderJob, String> {
         let p = self.catalog.photo(id).ok_or("no such photo")?.clone();
 
         // The region rect is in normalized coordinates on the upright photo.
@@ -146,29 +144,10 @@ impl Session {
         };
 
         // Render at a size that keeps the face sharp, then let the pipeline scale
-        let needed = (EMBED_EDGE as f64 * w.max(h) / side_px).ceil().min(2560.0);
-        let job = self.preview_job(id, needed as usize, needed as usize, true, &settings).ok_or("could not render the face crop for embedding")?;
-        let rendered = job.run();
-        let img = rendered.rendered.map_err(|e| format!("could not render the face crop for embedding: {e}"))?;
-
-        // Scale the rendered crop to exactly 112×112
-        let src = &img.image;
-        let (sw, sh) = (src.width, src.height);
-        let mut rgb = vec![0u8; EMBED_EDGE * EMBED_EDGE * 3];
-        for dy in 0..EMBED_EDGE {
-            for dx in 0..EMBED_EDGE {
-                // Nearest-neighbour (fine for ≤ 2× downscale of a face crop)
-                let sx = (dx * sw) / EMBED_EDGE;
-                let sy = (dy * sh) / EMBED_EDGE;
-                let px = src.data.get(sy * sw + sx).copied().unwrap_or_default();
-                let off = (dy * EMBED_EDGE + dx) * 3;
-                rgb[off] = px[0];
-                rgb[off + 1] = px[1];
-                rgb[off + 2] = px[2];
-            }
-        }
-
-        Ok(rgb)
+        let embed_edge = lightcraft_face_embed::INPUT_SIZE;
+        let needed = (embed_edge as f64 * w.max(h) / side_px).ceil().min(2560.0);
+        self.preview_job(id, needed as usize, needed as usize, true, &settings)
+            .ok_or_else(|| "could not create a render job for face embedding".to_string())
     }
 
     /// Compute the embedding for face region `region_index` of photo `id`, waiting for the
@@ -182,10 +161,10 @@ impl Session {
             if !matches!(region.kind, lightcraft_meta::RegionKind::Face) {
                 return Err("region is not a face".into());
             }
-            let rgb = self.face_embed_render(id, region)?;
+            let render = self.face_embed_render_job(id, region)?;
             let dir = self.face_embedder.model_dir()?;
             let (tx, rx) = std::sync::mpsc::channel();
-            let job = worker::Job { dir, photo: id, region_index, rgb, reply: tx };
+            let job = worker::Job { dir, photo: id, region_index, render, reply: tx };
             self.face_embedder.worker.submit(job)?;
             match rx.recv_timeout(WAIT) {
                 Ok(o) => {
@@ -203,7 +182,9 @@ impl Session {
     }
 
     /// Background mode: queue embedding for face region `region_index` of photo `id`;
-    /// the result is collected by [`Session::face_embed_poll`].
+    /// the result is collected by [`Session::face_embed_poll`].  This is cheap: it only
+    /// creates a [`RenderJob`] (no I/O) and sends it to the worker thread, which does
+    /// the actual image decode and scaling.
     pub fn face_embed_queue(&mut self, id: PhotoId, region_index: usize) -> Result<(), String> {
         self.face_embedder.model_dir()?;
         #[cfg(feature = "face-embed")]
@@ -213,10 +194,10 @@ impl Session {
             if !matches!(region.kind, lightcraft_meta::RegionKind::Face) {
                 return Err("region is not a face".into());
             }
-            let rgb = self.face_embed_render(id, region)?;
+            let render = self.face_embed_render_job(id, region)?;
             let dir = self.face_embedder.model_dir()?;
             let reply = self.face_embedder.results.0.clone();
-            let job = worker::Job { dir, photo: id, region_index, rgb, reply };
+            let job = worker::Job { dir, photo: id, region_index, render, reply };
             self.face_embedder.worker.submit(job)
         }
         #[cfg(not(feature = "face-embed"))]

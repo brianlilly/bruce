@@ -15,10 +15,18 @@ use std::time::Duration;
 
 use lightcraft_catalog::PhotoId;
 
+use crate::media::RenderJob;
+
 /// Unload the model after this long without a request.
 pub const IDLE_UNLOAD: Duration = Duration::from_secs(10 * 60);
 
+/// Edge size for the face crop fed to the embedding model (112×112).
+const EMBED_EDGE: usize = lightcraft_face_embed::INPUT_SIZE;
+
 /// One request: compute the embedding for a single face crop.
+///
+/// The `render` field carries a [`RenderJob`] that the **worker thread** calls `.run()` on —
+/// image decoding happens here, not on the UI thread.
 pub struct Job {
     /// The model folder (containing `adaface_ir18.safetensors`).
     pub dir: PathBuf,
@@ -26,8 +34,8 @@ pub struct Job {
     pub photo: PhotoId,
     /// Index of the face region within the photo's regions (so the caller can match it back).
     pub region_index: usize,
-    /// 8-bit RGB pixels of the face crop, row-major, exactly 112×112×3 bytes.
-    pub rgb: Vec<u8>,
+    /// The render job to produce the face crop's RGB pixels (run on the worker thread).
+    pub render: RenderJob,
     /// Where to send the result.
     pub reply: mpsc::Sender<Outcome>,
 }
@@ -185,10 +193,34 @@ fn model<'a>(state: &'a mut State, shared: &Shared, dir: &std::path::Path) -> Re
     state.model.as_mut().map(|(_, m)| m).ok_or_else(|| "the model did not load".to_string())
 }
 
+/// Render the face crop and compute its embedding.
 fn run_job(state: &mut State, shared: &Shared, job: &Job) -> Result<Vec<f32>, String> {
+    // 1. Render the face crop (image decode + scale) — the expensive part that used to block the UI.
+    let rendered = job.render.clone().run();
+    let img = rendered.rendered.map_err(|e| format!("could not render the face crop for embedding: {e}"))?;
+
+    // 2. Scale the rendered crop to exactly 112×112 (nearest-neighbour, fine for ≤ 2× downscale).
+    let src = &img.image;
+    let (sw, sh) = (src.width, src.height);
+    let mut rgb = vec![0u8; EMBED_EDGE * EMBED_EDGE * 3];
+    for dy in 0..EMBED_EDGE {
+        for dx in 0..EMBED_EDGE {
+            let sx = (dx * sw) / EMBED_EDGE;
+            let sy = (dy * sh) / EMBED_EDGE;
+            let px = src.data.get(sy * sw + sx).copied().unwrap_or_default();
+            let off = (dy * EMBED_EDGE + dx) * 3;
+            if let Some(slice) = rgb.get_mut(off..off + 3) {
+                slice[0] = px[0];
+                slice[1] = px[1];
+                slice[2] = px[2];
+            }
+        }
+    }
+
+    // 3. Run AdaFace on the 112×112 crop.
     let m = model(state, shared, &job.dir)?;
     let t = web_time::Instant::now();
-    let embedding = m.embed(&job.rgb).map_err(|e| e.to_string())?;
+    let embedding = m.embed(&rgb).map_err(|e| e.to_string())?;
     log::info!("face embedding computed in {:?}", t.elapsed());
     Ok(embedding.vector)
 }
@@ -198,9 +230,12 @@ mod tests {
     use super::*;
 
     fn job(reply: &mpsc::Sender<Outcome>) -> Job {
-        // An empty folder: loading fails with an error (no model files).
+        // An empty model folder: loading fails with an error (no model files).
         let dir = std::env::temp_dir().join(format!("bruce-embed-worker-none-{}", std::process::id()));
-        Job { dir, photo: PhotoId(1), region_index: 0, rgb: vec![0u8; 112 * 112 * 3], reply: reply.clone() }
+        // A render job pointing at a non-existent file: rendering will fail before embedding,
+        // which is fine — we want to test that errors come back cleanly.
+        let render = crate::media::RenderJob::dummy(PhotoId(1));
+        Job { dir, photo: PhotoId(1), region_index: 0, render, reply: reply.clone() }
     }
 
     #[test]
